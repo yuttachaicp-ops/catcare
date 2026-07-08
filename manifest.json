@@ -1,0 +1,16 @@
+{
+  "name": "CatCare AI — ดูแลสุขภาพแมว",
+  "short_name": "CatCare AI",
+  "description": "ผู้ช่วยดูแลสุขภาพแมวส่วนตัว ประเมินอาการเบื้องต้น สมุดสุขภาพ และรายงานสำหรับสัตวแพทย์",
+  "lang": "th",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5f6fb",
+  "theme_color": "#6c5ce7",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
