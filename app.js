@@ -170,6 +170,7 @@ function renderHome(){
       <h2>ยินดีต้อนรับสู่ CatCare AI</h2>
       <p class="muted">เริ่มต้นด้วยการเพิ่มโปรไฟล์แมวของคุณ</p>
       <button class="btn primary block" onclick="openPetForm()">＋ เพิ่มโปรไฟล์แมว</button>
+      <button class="btn ghost block" style="margin-top:8px" onclick="go('more');setTimeout(()=>moreTab('guide'),50)">📖 ดูวิธีใช้งานแอป</button>
     </div></div>
     <div class="notice">แอปนี้เป็นผู้ช่วยดูแลสุขภาพเบื้องต้น ไม่ใช่ระบบคลินิก และไม่ทดแทนการวินิจฉัยของสัตวแพทย์</div>`;
     return;
@@ -218,6 +219,7 @@ function renderHome(){
       <button class="btn ghost" onclick="openLogForm()">📊 บันทึกวันนี้</button>
       <button class="btn ghost" onclick="openRecordForm()">💉 เพิ่มบันทึก</button>
       <button class="btn ghost" onclick="go('more');setTimeout(()=>moreTab('report'),50)">📋 ทำรายงาน</button>
+      <button class="btn ghost" onclick="go('more');setTimeout(()=>moreTab('guide'),50)">📖 วิธีใช้งาน</button>
     </div>
   </div>`;
 }
@@ -542,6 +544,7 @@ function renderMore(){
   const el=$('page-more');
   el.innerHTML=`
   <div class="seg">
+    <button class="${moreSub==='guide'?'on':''}" onclick="moreTab('guide')">📖 วิธีใช้</button>
     <button class="${moreSub==='report'?'on':''}" onclick="moreTab('report')">📋 รายงาน</button>
     <button class="${moreSub==='ai'?'on':''}" onclick="moreTab('ai')">🤖 AI</button>
     <button class="${moreSub==='image'?'on':''}" onclick="moreTab('image')">📷 วิเคราะห์รูป</button>
@@ -554,11 +557,54 @@ function renderMore(){
 function moreTab(t){ moreSub=t; if(currentTab!=='more'){go('more');return;} $('moreBody')?renderMore():go('more'); }
 function moreBody(){
   const b=$('moreBody'); if(!b)return;
-  if(moreSub==='report') b.innerHTML=reportView();
+  if(moreSub==='guide') b.innerHTML=guideView();
+  else if(moreSub==='report') b.innerHTML=reportView();
   else if(moreSub==='ai') b.innerHTML=aiView();
   else if(moreSub==='image') b.innerHTML=imageView();
   else if(moreSub==='notif') b.innerHTML=notifView();
   else if(moreSub==='backup') b.innerHTML=backupView();
+}
+
+/* ---------- Guide / คู่มือ (บอร์ดฟีเจอร์) ---------- */
+function guideView(){
+  const feats=[
+    {ic:'🐱',t:'โปรไฟล์แมว',st:'ok',how:['ไปแท็บ "หน้าหลัก" กดปุ่ม ＋ หรือ "เพิ่มโปรไฟล์แมว"','ใส่รูป ชื่อ อายุ เพศ สายพันธุ์ น้ำหนัก โรคประจำตัว ประวัติแพ้ยา แล้วกดบันทึก','มีหลายตัวได้ สลับตัวที่ปุ่มมุมขวาบนของแอป']},
+    {ic:'🩺',t:'ประเมินอาการเบื้องต้น',st:'ok',how:['แท็บ "ประเมินอาการ" แตะเลือกอาการที่พบ (เลือกได้หลายอาการ ไม่ต้องพิมพ์)','กดปุ่ม "ประเมินอาการ"','ดูระดับความเร่งด่วน ภาวะที่อาจเกี่ยวข้อง คำแนะนำ และสัญญาณอันตราย','กด "บันทึกผลนี้" เพื่อเก็บไว้ใน Timeline']},
+    {ic:'📔',t:'สมุดสุขภาพ',st:'ok',how:['แท็บ "สมุดสุขภาพ" กดปุ่ม ＋','เลือกประเภท: วัคซีน / ถ่ายพยาธิ / เห็บหมัด / ยา / ผลตรวจ / เอกสาร','กรอกรายละเอียด แนบรูปได้ และใส่ "เตือนครั้งถัดไป" เพื่อให้เด้งเตือนอัตโนมัติ']},
+    {ic:'📊',t:'Dashboard สุขภาพ',st:'ok',how:['แท็บ "Dashboard" กด "บันทึกวันนี้"','ใส่น้ำหนัก การกิน การดื่ม ปัสสาวะ อุจจาระ','ดูกราฟแนวโน้มน้ำหนัก และ Timeline เหตุการณ์สุขภาพ']},
+    {ic:'📋',t:'รายงานสำหรับสัตวแพทย์',st:'ok',how:['เพิ่มเติม → "รายงาน"','ระบบสรุปข้อมูลให้อัตโนมัติ','กด "คัดลอกข้อความ" หรือ "บันทึกเป็น PDF" เพื่อส่งให้คุณหมอ']},
+    {ic:'🔔',t:'การเตือน (วัคซีน/ยา/ตรวจสุขภาพ)',st:'ok',how:['เพิ่มเติม → "เตือน" กด "เปิดการแจ้งเตือนบนอุปกรณ์"','เพิ่มการเตือนเองได้ หรือมาจากช่อง "เตือนครั้งถัดไป" ในสมุดสุขภาพ']},
+    {ic:'💾',t:'สำรอง & กู้คืนข้อมูล',st:'ok',how:['เพิ่มเติม → "ข้อมูล"','กด "ส่งออกไฟล์สำรอง" เก็บไฟล์ไว้เป็นระยะ','เปลี่ยนเครื่องแล้วใช้ "กู้คืนจากไฟล์" (ระบบสำรองอัตโนมัติก่อนเปลี่ยนแปลงทุกครั้ง)']},
+    {ic:'🐾',t:'รองรับสัตว์ชนิดอื่น',st:'ok',how:['ตอนเพิ่มโปรไฟล์ เลือก "ชนิดสัตว์" ได้ (แมว/สุนัข/กระต่าย/นก/อื่น ๆ)']},
+    {ic:'🤖',t:'ผู้ช่วย AI ตอบคำถาม',st:'warn',how:['ใช้ได้แบบพื้นฐานออฟไลน์ทันที','ปลดล็อกเต็มรูปแบบ: เพิ่มเติม → ข้อมูล → "ตั้งค่า AI" ใส่ API key (Claude หรือ OpenAI)','จากนั้นถามคำถามสุขภาพแมวได้ที่ เพิ่มเติม → "AI"']},
+    {ic:'📷',t:'วิเคราะห์รูป (ตา/หู/ผิวหนัง/แผล)',st:'warn',how:['ต้องใส่ API key ที่รองรับรูปภาพก่อน (ตั้งค่า AI)','เพิ่มเติม → "วิเคราะห์รูป" เลือกบริเวณ → อัปโหลดรูป → กดวิเคราะห์']},
+  ];
+  const badge=s=>s==='ok'?'<span class="badge ok">พร้อมใช้</span>':'<span class="badge warn">ต้องตั้งค่า</span>';
+  return `
+  <div class="card" style="background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;border:none">
+    <h2 style="color:#fff">📖 คู่มือการใช้งาน CatCare AI</h2>
+    <p style="margin:0;opacity:.92;font-size:13px">แตะแต่ละฟีเจอร์เพื่อดูวิธีใช้ทีละขั้น &nbsp;•&nbsp; <span class="badge ok">พร้อมใช้</span> ใช้ได้ทันที &nbsp;•&nbsp; <span class="badge warn">ต้องตั้งค่า</span> ตั้งค่าก่อน</p>
+  </div>
+  ${feats.map((f,i)=>`
+    <div class="card" style="padding:0;overflow:hidden">
+      <div onclick="toggleGuide(${i})" style="display:flex;align-items:center;gap:12px;padding:14px;cursor:pointer">
+        <div class="avatar" style="width:44px;height:44px;font-size:22px">${f.ic}</div>
+        <div style="flex:1;min-width:0"><div style="font-weight:700">${esc(f.t)}</div>${badge(f.st)}</div>
+        <div id="gc${i}" style="color:var(--sub);font-size:18px">▾</div>
+      </div>
+      <div id="gd${i}" style="display:none;padding:0 14px 16px">
+        <ol style="margin:0;padding-left:18px">${f.how.map(h=>`<li style="margin-bottom:6px">${esc(h)}</li>`).join('')}</ol>
+      </div>
+    </div>`).join('')}
+  <div class="notice">💡 เคล็ดลับ: แอปทำงานออฟไลน์ได้ • ข้อมูลเก็บในเครื่องคุณเอง • ติดตั้งเป็นแอปได้จากเมนูเบราว์เซอร์ "เพิ่มลงในหน้าจอหลัก"</div>
+  <div class="notice">⚠️ CatCare AI เป็นผู้ช่วยดูแลสุขภาพเบื้องต้น ไม่ใช่ระบบคลินิก และไม่ทดแทนการวินิจฉัยของสัตวแพทย์</div>`;
+}
+function toggleGuide(i){
+  const el=document.getElementById('gd'+i), car=document.getElementById('gc'+i);
+  if(!el) return;
+  const open = el.style.display==='none';
+  el.style.display = open?'block':'none';
+  if(car) car.textContent = open?'▴':'▾';
 }
 
 /* ---------- Report ---------- */
