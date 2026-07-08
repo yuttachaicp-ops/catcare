@@ -77,6 +77,28 @@ function petAvatar(p, lg){
 function readImage(file, cb, maxSize){
   maxSize = maxSize || 700;
   if(!file){ toast('ไม่พบไฟล์รูป'); return; }
+  const isHeic = /heic|heif/i.test(file.type||'') || /\.(heic|heif)$/i.test(file.name||'');
+  if(isHeic){
+    if(!navigator.onLine){ toast('รูป HEIC ต้องต่ออินเทอร์เน็ตเพื่อแปลง หรือใช้ไฟล์ JPG/PNG'); return; }
+    toast('กำลังแปลงรูป HEIC…');
+    loadHeicLib()
+      .then(()=>window.heic2any({ blob:file, toType:'image/jpeg', quality:0.85 }))
+      .then(jpg=>processImageFile(Array.isArray(jpg)?jpg[0]:jpg, cb, maxSize))
+      .catch(()=>{ toast('แปลงรูป HEIC ไม่สำเร็จ ลองใช้ไฟล์ JPG หรือ PNG'); });
+    return;
+  }
+  processImageFile(file, cb, maxSize);
+}
+function loadHeicLib(){
+  return new Promise((resolve,reject)=>{
+    if(window.heic2any) return resolve();
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+    s.onload=()=>resolve(); s.onerror=()=>reject(new Error('load fail'));
+    document.head.appendChild(s);
+  });
+}
+function processImageFile(file, cb, maxSize){
   const reader = new FileReader();
   reader.onerror = ()=>{ toast('อ่านไฟล์รูปไม่สำเร็จ'); };
   reader.onload = e=>{
@@ -98,7 +120,8 @@ function readImage(file, cb, maxSize){
         cb(out && out.length>50 ? out : raw);
       }catch(err){ cb(raw); }
     };
-    img.onerror = ()=>{ toast('รูปนี้แสดงไม่ได้ ลองใช้ไฟล์ JPG หรือ PNG'); cb(raw); };
+    // ถอดรหัสรูปไม่ได้ (เช่น HEIC ที่แปลงไม่สำเร็จ) → ไม่โชว์ไอคอนรูปแตก แต่แจ้งเตือน
+    img.onerror = ()=>{ toast('ไฟล์รูปนี้แสดงไม่ได้ กรุณาใช้ไฟล์ JPG หรือ PNG'); };
     img.src = raw;
   };
   reader.readAsDataURL(file);

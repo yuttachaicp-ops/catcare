@@ -1,5 +1,5 @@
 /* CatCare AI — Service Worker (offline cache) */
-const CACHE = 'catcare-v2';
+const CACHE = 'catcare-v3';
 const ASSETS = [
   './',
   './index.html',
