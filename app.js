@@ -76,18 +76,30 @@ function petAvatar(p, lg){
 /* ---------- รูปภาพ: ย่อขนาดแล้วเก็บเป็น base64 ---------- */
 function readImage(file, cb, maxSize){
   maxSize = maxSize || 700;
+  if(!file){ toast('ไม่พบไฟล์รูป'); return; }
   const reader = new FileReader();
+  reader.onerror = ()=>{ toast('อ่านไฟล์รูปไม่สำเร็จ'); };
   reader.onload = e=>{
+    const raw = e.target.result;
     const img = new Image();
     img.onload = ()=>{
-      let {width:w, height:h} = img;
-      if(w>h && w>maxSize){ h=h*maxSize/w; w=maxSize; }
-      else if(h>maxSize){ w=w*maxSize/h; h=maxSize; }
-      const c=document.createElement('canvas'); c.width=w; c.height=h;
-      c.getContext('2d').drawImage(img,0,0,w,h);
-      cb(c.toDataURL('image/jpeg',0.72));
+      try{
+        let w = img.naturalWidth || img.width;
+        let h = img.naturalHeight || img.height;
+        if(!w || !h){ cb(raw); return; }
+        if(w>h && w>maxSize){ h=Math.round(h*maxSize/w); w=maxSize; }
+        else if(h>maxSize){ w=Math.round(w*maxSize/h); h=maxSize; }
+        const c=document.createElement('canvas'); c.width=w; c.height=h;
+        const ctx=c.getContext('2d');
+        if(!ctx){ cb(raw); return; }
+        ctx.drawImage(img,0,0,w,h);
+        let out;
+        try{ out=c.toDataURL('image/jpeg',0.72); }catch(err){ out=null; }
+        cb(out && out.length>50 ? out : raw);
+      }catch(err){ cb(raw); }
     };
-    img.src = e.target.result;
+    img.onerror = ()=>{ toast('รูปนี้แสดงไม่ได้ ลองใช้ไฟล์ JPG หรือ PNG'); cb(raw); };
+    img.src = raw;
   };
   reader.readAsDataURL(file);
 }
@@ -290,7 +302,7 @@ function renderBook(){
         <div class="meta"><div class="t">${esc(r.title||c.label)}</div>
         <div class="s">${c.label} · ${fmtDate(r.date)}${r.nextDate?' · ครั้งถัดไป '+fmtDate(r.nextDate):''}</div>
         ${r.note?`<div class="s">${esc(r.note)}</div>`:''}</div>
-        ${r.photo?'<span>🖼️</span>':''}</div>`;
+        ${r.photo?`<img src="${r.photo}" style="width:46px;height:46px;border-radius:8px;object-fit:cover;flex-shrink:0">`:''}</div>`;
     }).join(''):'<div class="empty"><span class="em">📔</span>ยังไม่มีบันทึก<br><small>กดปุ่ม ＋ เพื่อเพิ่ม</small></div>'}
   </div>`;
 }
