@@ -171,6 +171,7 @@ function renderHome(){
       <p class="muted">เริ่มต้นด้วยการเพิ่มโปรไฟล์แมวของคุณ</p>
       <button class="btn primary block" onclick="openPetForm()">＋ เพิ่มโปรไฟล์แมว</button>
       <button class="btn ghost block" style="margin-top:8px" onclick="go('more');setTimeout(()=>moreTab('guide'),50)">📖 ดูวิธีใช้งานแอป</button>
+      <button class="btn ghost block" style="margin-top:8px" onclick="go('assess')">🩺 ลองประเมินอาการ (ไม่ต้องเพิ่มแมว)</button>
     </div></div>
     <div class="notice">แอปนี้เป็นผู้ช่วยดูแลสุขภาพเบื้องต้น ไม่ใช่ระบบคลินิก และไม่ทดแทนการวินิจฉัยของสัตวแพทย์</div>`;
     return;
@@ -310,31 +311,43 @@ function switchPet(id){ DB.activePetId=id; saveDB(); closeModal(); render(); }
    HEALTH BOOK
    ========================================================= */
 let bookFilter='all';
+function pendingRecords(petId){ return DB.records.filter(r=>r.petId===petId && r.status==='pending'); }
 function renderBook(){
   const p=activePet(); const el=$('page-book');
   if(!p){ el.innerHTML=noPet(); return; }
-  const cats=['all',...Object.keys(REC_CATS)];
+  const cats=['all','pending',...Object.keys(REC_CATS)];
+  const label=c=> c==='all'?'ทั้งหมด' : c==='pending'?'⏳ รอผล' : REC_CATS[c].emoji+' '+REC_CATS[c].label;
   let recs=DB.records.filter(r=>r.petId===p.id);
-  if(bookFilter!=='all') recs=recs.filter(r=>r.category===bookFilter);
-  recs.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  if(bookFilter==='pending') recs=recs.filter(r=>r.status==='pending');
+  else if(bookFilter!=='all') recs=recs.filter(r=>r.category===bookFilter);
+  recs.sort((a,b)=>{
+    const pa=a.status==='pending'?0:1, pb=b.status==='pending'?0:1;
+    if(pa!==pb) return pa-pb;
+    return (b.date||'').localeCompare(a.date||'');
+  });
+  const npend=pendingRecords(p.id).length;
   el.innerHTML=`
-  <div class="seg">${cats.map(c=>`<button class="${bookFilter===c?'on':''}" onclick="bookFilter='${c}';renderBook()">${c==='all'?'ทั้งหมด':REC_CATS[c].emoji+' '+REC_CATS[c].label}</button>`).join('')}</div>
+  <div class="seg">${cats.map(c=>`<button class="${bookFilter===c?'on':''}" onclick="bookFilter='${c}';renderBook()">${label(c)}${c==='pending'&&npend?' ('+npend+')':''}</button>`).join('')}</div>
   <div class="card">
     ${recs.length? recs.map(r=>{
       const c=REC_CATS[r.category]||{};
+      const ups=(r.updates||[]); const last=ups[ups.length-1];
       return `<div class="list-item" onclick="openRecordForm('${r.id}')" style="cursor:pointer">
         <div class="avatar" style="width:44px;height:44px;font-size:20px">${c.emoji||'📄'}</div>
-        <div class="meta"><div class="t">${esc(r.title||c.label)}</div>
+        <div class="meta"><div class="t">${esc(r.title||c.label)} ${r.status==='pending'?'<span class="badge warn">⏳ รอผล</span>':''}</div>
         <div class="s">${c.label} · ${fmtDate(r.date)}${r.nextDate?' · ครั้งถัดไป '+fmtDate(r.nextDate):''}</div>
-        ${r.note?`<div class="s">${esc(r.note)}</div>`:''}</div>
+        ${r.note?`<div class="s">${esc(r.note)}</div>`:''}
+        ${last?`<div class="s">📝 ${fmtDate(last.date)}: ${esc(last.text)}${ups.length>1?' ('+ups.length+' อัพเดท)':''}</div>`:''}</div>
         ${r.photo?`<img src="${r.photo}" style="width:46px;height:46px;border-radius:8px;object-fit:cover;flex-shrink:0">`:''}</div>`;
     }).join(''):'<div class="empty"><span class="em">📔</span>ยังไม่มีบันทึก<br><small>กดปุ่ม ＋ เพื่อเพิ่ม</small></div>'}
   </div>`;
 }
-let _recPhoto=null;
+let _recPhoto=null, _recStatus='done', _recUpdates=[];
 function openRecordForm(id){
   const r=id?DB.records.find(x=>x.id===id):null;
   _recPhoto=r?r.photo:null;
+  _recStatus=r?(r.status||'done'):'done';
+  _recUpdates=r&&r.updates?JSON.parse(JSON.stringify(r.updates)):[];
   const catOpts=Object.entries(REC_CATS).map(([k,v])=>`<option value="${k}" ${r&&r.category===k?'selected':''}>${v.emoji} ${v.label}</option>`).join('');
   openModal(r?'แก้ไขบันทึก':'เพิ่มบันทึกสุขภาพ',`
     <label>ประเภท</label><select id="r_cat">${catOpts}</select>
@@ -343,19 +356,43 @@ function openRecordForm(id){
       <div><label>วันที่</label><input id="r_date" type="date" value="${r?r.date:todayStr()}"></div>
       <div><label>เตือนครั้งถัดไป</label><input id="r_next" type="date" value="${r?r.nextDate||'':''}"></div>
     </div>
+    <label>สถานะ</label>
+    <div class="seg" id="r_statusSeg">
+      <button type="button" class="${_recStatus==='pending'?'on':''}" onclick="setRecStatus('pending',this)">⏳ รอผล</button>
+      <button type="button" class="${_recStatus==='done'?'on':''}" onclick="setRecStatus('done',this)">✅ มีผล/เสร็จแล้ว</button>
+    </div>
     <label>รายละเอียด / บันทึก</label><textarea id="r_note" placeholder="เช่น ยี่ห้อ, ขนาด, อาการ, ผลตรวจ">${r?esc(r.note||''):''}</textarea>
     <div style="text-align:center;margin-top:8px" id="r_photoWrap">${_recPhoto?`<img src="${_recPhoto}" style="max-width:100%;border-radius:12px">`:''}</div>
     <label style="display:inline-block;color:var(--brand);cursor:pointer">📎 แนบรูป/เอกสาร<input type="file" accept="image/*" style="display:none" onchange="onRecPhoto(this)"></label>
-    <button class="btn primary block" style="margin-top:12px" onclick="saveRecord('${id||''}')">บันทึก</button>
+    <label style="margin-top:14px">อัพเดท / ผลตรวจ (เพิ่มได้เรื่อย ๆ)</label>
+    <div id="r_updates">${renderRecUpdates()}</div>
+    <div class="row" style="margin-top:6px">
+      <input id="r_upd_text" placeholder="เช่น ผลออกแล้ว: ค่าไตปกติ" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();addRecUpdate();}">
+      <button class="btn ghost sm" type="button" onclick="addRecUpdate()">＋ เพิ่ม</button>
+    </div>
+    <button class="btn primary block" style="margin-top:14px" onclick="saveRecord('${id||''}')">บันทึก</button>
     ${r?`<button class="btn danger block" style="margin-top:8px" onclick="delRecord('${id}')">ลบ</button>`:''}
   `);
 }
+function setRecStatus(sv,btn){ _recStatus=sv; btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('on')); btn.classList.add('on'); }
+function renderRecUpdates(){
+  if(!_recUpdates.length) return '<div class="muted" style="font-size:12.5px">ยังไม่มีอัพเดท — พิมพ์ผล/ความคืบหน้าด้านล่างแล้วกดเพิ่ม</div>';
+  return '<div class="tl" style="margin-top:6px">'+_recUpdates.map((u,i)=>`<div class="tl-item"><div class="d">${fmtDate(u.date)}</div>${esc(u.text)} <span onclick="delRecUpdate(${i})" style="color:var(--danger);cursor:pointer;font-size:12px">✕</span></div>`).join('')+'</div>';
+}
+function addRecUpdate(){
+  const t=$('r_upd_text'); const txt=t.value.trim(); if(!txt){ toast('พิมพ์รายละเอียดอัพเดทก่อน'); return; }
+  _recUpdates.push({id:uid(),date:todayStr(),text:txt});
+  t.value=''; $('r_updates').innerHTML=renderRecUpdates();
+  toast('เพิ่มอัพเดทแล้ว (อย่าลืมกดบันทึก)');
+}
+function delRecUpdate(i){ _recUpdates.splice(i,1); $('r_updates').innerHTML=renderRecUpdates(); }
 function onRecPhoto(input){ if(!input.files[0])return; readImage(input.files[0],d=>{_recPhoto=d;$('r_photoWrap').innerHTML=`<img src="${d}" style="max-width:100%;border-radius:12px">`;}); }
 function saveRecord(id){
   const p=activePet();
   autoBackup();
   const data={petId:p.id,category:$('r_cat').value,title:$('r_title').value.trim(),
-    date:$('r_date').value||todayStr(),nextDate:$('r_next').value,note:$('r_note').value.trim(),photo:_recPhoto};
+    date:$('r_date').value||todayStr(),nextDate:$('r_next').value,note:$('r_note').value.trim(),
+    photo:_recPhoto,status:_recStatus,updates:_recUpdates};
   if(id){ Object.assign(DB.records.find(x=>x.id===id),data); }
   else DB.records.push(Object.assign({id:uid()},data));
   saveDB(); closeModal(); toast('บันทึกแล้ว'); render();
@@ -366,14 +403,23 @@ function delRecord(id){ if(!confirm('ลบบันทึกนี้?'))return
    ASSESS (ประเมินอาการ)
    ========================================================= */
 let selectedSymptoms=[];
+let assessTarget=null;
+function setAssessTarget(t){ assessTarget=t; renderAssess(); }
 function renderAssess(){
-  const p=activePet(); const el=$('page-assess');
-  if(!p){ el.innerHTML=noPet(); return; }
+  const el=$('page-assess');
+  if(assessTarget===null) assessTarget = activePet()? activePet().id : 'general';
+  if(assessTarget!=='general' && !DB.pets.find(p=>p.id===assessTarget)) assessTarget='general';
+  const targetPet = assessTarget==='general'? null : DB.pets.find(p=>p.id===assessTarget);
+  const targetChips = `<div class="seg" style="margin-bottom:12px">
+    <button class="${assessTarget==='general'?'on':''}" onclick="setAssessTarget('general')">🩺 ทั่วไป</button>
+    ${DB.pets.map(p=>`<button class="${assessTarget===p.id?'on':''}" onclick="setAssessTarget('${p.id}')">${(SPECIES[p.species]||SPECIES.other).emoji} ${esc(p.name)}</button>`).join('')}
+  </div>`;
   el.innerHTML=`
   <div class="notice">⚠️ การประเมินนี้เป็นข้อมูลเบื้องต้นเพื่อช่วยตัดสินใจและสื่อสารกับสัตวแพทย์เท่านั้น ไม่ใช่การวินิจฉัยและไม่ทดแทนการพบสัตวแพทย์</div>
+  ${targetChips}
   <div class="card">
-    <h2>🩺 เลือกอาการที่พบใน ${esc(p.name)}</h2>
-    <p class="muted">กดเลือกได้หลายอาการ ไม่ต้องพิมพ์</p>
+    <h2>🩺 เลือกอาการที่พบ${targetPet?' ใน '+esc(targetPet.name):' (ประเมินทั่วไป)'}</h2>
+    <p class="muted">กดเลือกได้หลายอาการ ไม่ต้องพิมพ์${assessTarget==='general'?' · เลือกแมวด้านบนถ้าต้องการบันทึกผลลง Timeline':''}</p>
     ${SYMPTOM_GROUPS.map(g=>`
       <div style="margin-top:14px"><strong>${g.icon} ${g.group}</strong><div style="margin-top:8px">
       ${g.symptoms.map(s=>`<span class="chip ${selectedSymptoms.includes(s.id)?'on':''}" onclick="toggleSymptom('${s.id}')">${esc(s.label)}</span>`).join('')}
@@ -422,14 +468,16 @@ function runAssess(){
     <ul class="muted">${RED_FLAGS.map(f=>`<li>${esc(f)}</li>`).join('')}</ul>
   </div>
   <div class="row">
-    <button class="btn primary" onclick="saveAssessment(${r.level})">💾 บันทึกผลนี้</button>
+    ${assessTarget!=='general'?`<button class="btn primary" onclick="saveAssessment(${r.level})">💾 บันทึกผลนี้</button>`:''}
     <button class="btn ghost" onclick="go('more');setTimeout(()=>moreTab('report'),50)">📋 สร้างรายงานสัตวแพทย์</button>
-  </div>`;
+  </div>
+  ${assessTarget==='general'?'<p class="muted" style="margin-top:8px">อยากเก็บผลนี้ไว้ดูย้อนหลัง? เลือกแมวจากแถบด้านบนแล้วกด "บันทึกผลนี้"</p>':''}`;
   if(box.scrollIntoView) box.scrollIntoView({behavior:"smooth"});
 }
 function saveAssessment(level){
-  const p=activePet(); autoBackup();
-  DB.assessments.push({id:uid(),petId:p.id,date:new Date().toISOString(),symptomIds:[...selectedSymptoms],level});
+  if(assessTarget==='general' || !DB.pets.find(p=>p.id===assessTarget)){ toast('เลือกแมวจากแถบด้านบนก่อนเพื่อบันทึกผล'); return; }
+  autoBackup();
+  DB.assessments.push({id:uid(),petId:assessTarget,date:new Date().toISOString(),symptomIds:[...selectedSymptoms],level});
   saveDB(); toast('บันทึกผลการประเมินแล้ว (ดูใน Timeline)');
 }
 
