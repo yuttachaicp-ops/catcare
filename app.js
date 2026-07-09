@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.1.0';
+const APP_VERSION = '1.2.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -25,23 +25,44 @@ function freshDB(){
   return { v:1, activePetId:null, pets:[], records:[], logs:[], assessments:[],
     reminders:[], chats:[], settings:{aiProvider:'claude', apiKey:'', model:''} };
 }
-let DB = loadDB();
+/* IndexedDB wrapper (เก็บได้มากกว่า localStorage + กันพื้นที่เต็ม) */
+const IDB_NAME='catcare_db', IDB_STORE='kv';
+function idbOpen(){ return new Promise((res,rej)=>{ const r=indexedDB.open(IDB_NAME,1);
+  r.onupgradeneeded=()=>{ if(!r.result.objectStoreNames.contains(IDB_STORE)) r.result.createObjectStore(IDB_STORE); };
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+function idbGet(k){ return idbOpen().then(db=>new Promise((res,rej)=>{ const q=db.transaction(IDB_STORE,'readonly').objectStore(IDB_STORE).get(k); q.onsuccess=()=>res(q.result); q.onerror=()=>rej(q.error); })); }
+function idbSet(k,v){ return idbOpen().then(db=>new Promise((res,rej)=>{ const tx=db.transaction(IDB_STORE,'readwrite'); tx.objectStore(IDB_STORE).put(v,k); tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); })); }
 
-function loadDB(){
+let DB = freshDB();
+let _autoBackup = null;
+const _useIDB = (typeof indexedDB !== 'undefined' && indexedDB);
+async function loadDBInit(){
   try{
-    const raw = localStorage.getItem(DB_KEY);
-    if(!raw) return freshDB();
-    const d = JSON.parse(raw);
-    return Object.assign(freshDB(), d);
-  }catch(e){ console.warn('loadDB fail', e); return freshDB(); }
+    if(_useIDB){
+      const stored = await idbGet('db');
+      if(stored){ DB = Object.assign(freshDB(), stored); }
+      else {
+        const raw = localStorage.getItem(DB_KEY);           // ย้ายข้อมูลเดิมจาก localStorage
+        if(raw){ DB = Object.assign(freshDB(), JSON.parse(raw)); await idbSet('db', DB); }
+      }
+      _autoBackup = await idbGet('backup') || null;
+      if(!_autoBackup){ const b=localStorage.getItem(BACKUP_KEY); if(b){ try{ _autoBackup=JSON.parse(b); }catch(e){} } }
+    } else {
+      const raw = localStorage.getItem(DB_KEY); if(raw) DB = Object.assign(freshDB(), JSON.parse(raw));
+      const b=localStorage.getItem(BACKUP_KEY); if(b){ try{ _autoBackup=JSON.parse(b); }catch(e){} }
+    }
+  }catch(e){ console.warn('load fail', e); }
 }
 function saveDB(){
-  try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }
-  catch(e){ toast('พื้นที่จัดเก็บเต็ม (รูปอาจใหญ่เกินไป)'); }
+  if(_useIDB){ idbSet('db', DB).catch(()=>toast('บันทึกข้อมูลไม่สำเร็จ')); }
+  else { try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){ toast('พื้นที่จัดเก็บเต็ม'); } }
 }
-/* สำรองอัตโนมัติก่อนการเปลี่ยนแปลงสำคัญ (backup ก่อนอัปเดต) */
+/* สำรองอัตโนมัติก่อนการเปลี่ยนแปลงสำคัญ */
 function autoBackup(){
-  try{ localStorage.setItem(BACKUP_KEY, JSON.stringify({ at:Date.now(), data:DB })); }catch(e){}
+  try{ _autoBackup={ at:Date.now(), data:JSON.parse(JSON.stringify(DB)) };
+    if(_useIDB) idbSet('backup', _autoBackup).catch(()=>{});
+    else localStorage.setItem(BACKUP_KEY, JSON.stringify(_autoBackup));
+  }catch(e){}
 }
 
 /* ---------- Helpers ---------- */
@@ -713,12 +734,10 @@ function copyReport(){
 }
 function printReport(){
   const p=activePet(); const txt=$('reportText').value;
-  const w=window.open('','_blank');
-  w.document.write(`<html><head><title>รายงานสุขภาพ ${esc(p.name)}</title><meta charset="utf-8">
-    <style>body{font-family:"Sarabun",sans-serif;padding:30px;line-height:1.6;white-space:pre-wrap;font-size:14px}h1{color:#6c5ce7}</style></head>
-    <body><h1>🐾 รายงานสุขภาพ — ${esc(p.name)}</h1><div>${esc(txt)}</div>
-    <script>window.onload=()=>{window.print()}<\/script></body></html>`);
-  w.document.close();
+  let pa=document.getElementById('printArea');
+  if(!pa){ pa=document.createElement('div'); pa.id='printArea'; document.body.appendChild(pa); }
+  pa.innerHTML='<h1>🐾 รายงานสุขภาพ — '+esc(p?p.name:'')+'</h1><div style="white-space:pre-wrap">'+esc(txt)+'</div>';
+  window.print();
 }
 
 /* ---------- AI Assistant (scaffold) ---------- */
@@ -867,17 +886,27 @@ function enableNotif(){
     else toast('ไม่ได้รับอนุญาต');
   });
 }
+function notify(title, body){
+  try{
+    if('serviceWorker' in navigator && navigator.serviceWorker.ready){
+      navigator.serviceWorker.ready.then(reg=>{
+        try{ reg.showNotification(title,{ body, icon:'icon-192.png', badge:'icon-192.png', tag:'catcare' }); }
+        catch(e){ try{ new Notification(title,{ body }); }catch(_){} }
+      }).catch(()=>{ try{ new Notification(title,{ body }); }catch(_){} });
+    } else { new Notification(title,{ body }); }
+  }catch(e){}
+}
 function checkDueNotifs(){
   if(!('Notification' in window)||Notification.permission!=='granted')return;
   DB.pets.forEach(p=>upcomingReminders(p.id).forEach(r=>{
     const d=daysBetween(todayStr(),r.dueDate);
-    if(d===0||d===1) new Notification('CatCare AI 🐾',{body:p.name+': '+r.title+(d===0?' (วันนี้)':' (พรุ่งนี้)')});
+    if(d===0||d===1) notify('CatCare AI 🐾', p.name+': '+r.title+(d===0?' (วันนี้)':' (พรุ่งนี้)'));
   }));
 }
 
 /* ---------- Backup & Restore ---------- */
 function backupView(){
-  const bk=(()=>{try{return JSON.parse(localStorage.getItem(BACKUP_KEY))}catch(e){return null}})();
+  const bk=_autoBackup;
   const st=DB.settings;
   return `<div class="card">
     <h2>💾 สำรอง & กู้คืนข้อมูล</h2>
@@ -928,7 +957,7 @@ function importData(input){
   r.readAsText(f);
 }
 function restoreAuto(){
-  const bk=JSON.parse(localStorage.getItem(BACKUP_KEY));
+  const bk=_autoBackup;
   if(!bk){ toast('ไม่มีข้อมูลสำรอง'); return; }
   if(!confirm('กู้คืนจากข้อมูลสำรองอัตโนมัติ?')) return;
   DB=Object.assign(freshDB(),bk.data); saveDB(); toast('กู้คืนสำเร็จ'); render();
@@ -976,5 +1005,4 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkUpd
 setTimeout(checkUpdate, 2500);
 
 /* ---------- init ---------- */
-render();
-setTimeout(checkDueNotifs, 1500);
+(async()=>{ await loadDBInit(); render(); setTimeout(checkDueNotifs, 1500); })();
