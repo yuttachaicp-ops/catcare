@@ -113,6 +113,9 @@ canvas{max-width:100%}
 .msg.u{background:var(--brand);color:#fff;margin-left:auto;border-bottom-right-radius:4px}
 .msg.a{background:#eef0fb;color:var(--ink);border-bottom-left-radius:4px}
 @media print{.app-header,.tabbar,.fab{display:none!important}body{padding:0}.card{box-shadow:none;border:1px solid #ccc}}
+.updatebar{position:fixed;top:0;left:0;right:0;z-index:60;background:var(--ok);color:#fff;padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;font-size:13px;font-weight:600;display:none;align-items:center;justify-content:center;gap:10px;box-shadow:0 2px 12px rgba(0,0,0,.18);flex-wrap:wrap;text-align:center}
+.updatebar.on{display:flex}
+.updatebar button{background:#fff;color:#0b7a54;border:none;border-radius:8px;padding:6px 12px;font-weight:700;font-family:inherit;cursor:pointer}
 </style>
 </head>
 <body>
@@ -148,8 +151,8 @@ canvas{max-width:100%}
 </div>
 <div class="toast" id="toast"></div>
 
-<script src="symptoms.js?v=6"></script>
-<script src="app.js?v=6"></script>
+<script src="symptoms.js?v=7"></script>
+<script src="app.js?v=7"></script>
 <script>
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
 </script>

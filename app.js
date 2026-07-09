@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -950,6 +950,30 @@ function closeModal(){ $('modalBg').classList.remove('on'); }
 /* ---------- misc ---------- */
 function noPet(){ return `<div class="card"><div class="empty"><span class="em">🐱</span>ยังไม่มีโปรไฟล์สัตว์เลี้ยง<br>
   <button class="btn primary" style="margin-top:10px" onclick="openPetForm()">＋ เพิ่มโปรไฟล์</button></div></div>`; }
+
+/* ---------- ตัวเช็ก & แจ้งเตือนอัปเดต ---------- */
+function showUpdateBar(v){
+  let bar=$('updateBar');
+  if(!bar){ bar=document.createElement('div'); bar.id='updateBar'; bar.className='updatebar'; document.body.appendChild(bar); }
+  bar.innerHTML=`🔄 มีเวอร์ชันใหม่${v?' ('+esc(v)+')':''} — อัปเดตเพื่อรับฟีเจอร์ล่าสุด <button onclick="doUpdate()">อัปเดตเลย</button>`;
+  bar.classList.add('on');
+}
+async function doUpdate(){
+  const b=$('updateBar'); if(b) b.innerHTML='กำลังอัปเดต…';
+  try{ if('caches' in window){ const ks=await caches.keys(); await Promise.all(ks.map(k=>caches.delete(k))); } }catch(e){}
+  try{ if('serviceWorker' in navigator){ const rs=await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(r=>r.update())); } }catch(e){}
+  location.reload();
+}
+async function checkUpdate(){
+  try{
+    const r=await fetch('version.json?t='+Date.now(),{cache:'no-store'});
+    if(!r.ok) return;
+    const d=await r.json();
+    if(d && d.version && d.version!==APP_VERSION) showUpdateBar(d.version);
+  }catch(e){}
+}
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkUpdate(); });
+setTimeout(checkUpdate, 2500);
 
 /* ---------- init ---------- */
 render();
