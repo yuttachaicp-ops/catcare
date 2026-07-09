@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.4.0';
+const APP_VERSION = '1.5.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -264,10 +264,20 @@ function upcomingReminders(petId){
 }
 
 /* ---------- Pet form ---------- */
-let _petPhoto=null;
+let _petPhoto=null, _petSprite=null;
+function onPetSprite(input){
+  if(!input.files[0]) return;
+  const f=input.files[0];
+  if(f.size>3*1024*1024){ toast('ไฟล์ใหญ่เกินไป (ควร < 3MB)'); return; }
+  const r=new FileReader();
+  r.onerror=()=>toast('อ่านไฟล์ไม่สำเร็จ');
+  r.onload=e=>{ _petSprite=e.target.result; const w=$('petSprWrap'); if(w) w.innerHTML='<img src="'+_petSprite+'" style="height:52px;image-rendering:pixelated;background:#a7d08c;border-radius:8px;padding:2px">'; };
+  r.readAsDataURL(f);   // เก็บ PNG ดิบ คงความโปร่งใส/คมชัดของพิกเซล
+}
 function openPetForm(id){
   const p = id ? DB.pets.find(x=>x.id===id) : null;
   _petPhoto = p ? p.photo : null;
+  _petSprite = p ? (p.sprite||null) : null;
   const spOpts = Object.entries(SPECIES).map(([k,v])=>`<option value="${k}" ${p&&p.species===k?'selected':(!p&&k==='cat'?'selected':'')}>${v.emoji} ${v.label}</option>`).join('');
   openModal(`${p?'แก้ไขโปรไฟล์':'เพิ่มโปรไฟล์'}`, `
     <div style="text-align:center;margin-bottom:8px">
@@ -276,6 +286,9 @@ function openPetForm(id){
         📷 เลือกรูป<input type="file" accept="image/*" style="display:none" onchange="onPetPhoto(this)">
       </label>
     </div>
+    <label>🎮 ภาพตัวละครในแมป (pixel sprite PNG) — ไม่บังคับ</label>
+    <div id="petSprWrap" style="text-align:center;margin-bottom:6px">${_petSprite?`<img src="${_petSprite}" style="height:52px;image-rendering:pixelated;background:#a7d08c;border-radius:8px;padding:2px">`:'<span class="muted">ยังไม่มี — จะใช้แมวพิกเซลมาตรฐาน · แนะนำ 32×32 ต่อเฟรม เรียงแนวนอน หันขวา</span>'}</div>
+    <label style="display:inline-block;color:var(--brand);cursor:pointer">🎨 เลือกไฟล์ sprite<input type="file" accept="image/png,image/*" style="display:none" onchange="onPetSprite(this)"></label>
     <label>ชนิดสัตว์</label><select id="f_species">${spOpts}</select>
     <label>ชื่อ *</label><input id="f_name" value="${p?esc(p.name):''}" placeholder="เช่น เหมียว">
     <div class="grid">
@@ -306,7 +319,7 @@ function savePet(id){
   autoBackup();
   const data={ species:$('f_species').value, name, birthdate:$('f_birth').value,
     sex:$('f_sex').value, breed:$('f_breed').value.trim(), weight:parseFloat($('f_weight').value)||'',
-    chronic:$('f_chronic').value.trim(), allergies:$('f_allergy').value.trim(), photo:_petPhoto };
+    chronic:$('f_chronic').value.trim(), allergies:$('f_allergy').value.trim(), photo:_petPhoto, sprite:_petSprite };
   if(id){ const p=DB.pets.find(x=>x.id===id); Object.assign(p,data); }
   else{ const np=Object.assign({id:uid(),createdAt:Date.now()},data); DB.pets.push(np); DB.activePetId=np.id;
         if(data.weight) DB.logs.push({id:uid(),petId:np.id,date:todayStr(),weight:data.weight}); }
@@ -1172,7 +1185,7 @@ setTimeout(checkUpdate, 2500);
 /* =========================================================
    PIXEL MAP (สวนพิกเซล + แมวเดินเล่น)
    ========================================================= */
-let _map={ raf:null, cats:[], deco:null, w:0, h:0 };
+let _map={ raf:null, cats:[], deco:null, w:0, h:0, spriteCache:{} };
 function catColor(pet){
   const pal=['#f4a261','#e9c46a','#e8e5da','#b08968','#9aa0a6','#f7b7c2','#3a3a44','#d9a066'];
   let hsh=0; const s=(pet&&pet.id)||''; for(let i=0;i<s.length;i++) hsh=(hsh*31+s.charCodeAt(i))>>>0;
@@ -1211,8 +1224,8 @@ function syncCats(){
   const prev={}; _map.cats.forEach(k=>prev[k.id]=k);
   _map.cats=(DB.pets||[]).map(pet=>{
     const ex=prev[pet.id];
-    if(ex){ ex.name=pet.name; ex.color=catColor(pet); return ex; }
-    return { id:pet.id, name:pet.name, color:catColor(pet),
+    if(ex){ ex.name=pet.name; ex.color=catColor(pet); ex.spr=pet.sprite||null; return ex; }
+    return { id:pet.id, name:pet.name, color:catColor(pet), spr:pet.sprite||null,
       x:20+Math.random()*(_map.w-40), y:50+Math.random()*(_map.h-70),
       tx:0, ty:0, dir:1, t:Math.random()*100, next:0, moving:false, step:false };
   });
@@ -1246,6 +1259,27 @@ function drawCat(ctx,cx,cy,color,dir,walk){
   P(6,-7,1,1,'#1e2233'); P(8,-6,1,1,'#e07a9a');
   ctx.restore();
 }
+function getSprite(id,src){
+  if(!src) return null;
+  const c=_map.spriteCache[id];
+  if(c && c.src===src) return c.ready?c:null;
+  const img=new Image();
+  const entry={img,ready:false,frames:1,fw:32,src};
+  img.onload=()=>{ const h=img.naturalHeight||img.height||32, w=img.naturalWidth||img.width||32; entry.fw=h; entry.frames=Math.max(1,Math.round(w/h)); entry.ready=true; };
+  img.onerror=()=>{ entry.bad=true; };
+  img.src=src;
+  _map.spriteCache[id]=entry;
+  return null;
+}
+function drawSprite(ctx,cx,cy,entry,dir,moving,t){
+  const dest=36, fw=entry.fw, frames=entry.frames;
+  const fi = (moving&&frames>1) ? (Math.floor(t/6)%frames) : 0;
+  ctx.save(); ctx.translate(Math.round(cx),Math.round(cy)); ctx.scale(dir,1);
+  ctx.fillStyle='rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(0,0,dest*0.28,3,0,0,7); ctx.fill();
+  ctx.imageSmoothingEnabled=false;
+  try{ ctx.drawImage(entry.img, fi*fw,0,fw,fw, -dest/2, -dest+5, dest,dest); }catch(e){}
+  ctx.restore();
+}
 function loopMap(){
   const ctx=_map.ctx, w=_map.w, h=_map.h;
   if(!ctx || currentTab!=='home' || !document.getElementById('mapCanvas')){ _map.raf=null; return; }
@@ -1257,7 +1291,9 @@ function loopMap(){
     const dx=k.tx-k.x, dy=k.ty-k.y, dist=Math.hypot(dx,dy)||1;
     if(dist>3){ const sp=0.7; k.x+=dx/dist*sp; k.y+=dy/dist*sp; k.dir=dx<0?-1:1; k.moving=true; k.step=(Math.floor(k.t/7)%2===0); }
     else k.moving=false;
-    drawCat(ctx,k.x,k.y,k.color,k.dir,k.moving&&k.step);
+    const spr = k.spr ? getSprite(k.id,k.spr) : null;
+    if(spr) drawSprite(ctx,k.x,k.y,spr,k.dir,k.moving,k.t);
+    else drawCat(ctx,k.x,k.y,k.color,k.dir,k.moving&&k.step);
     ctx.font='700 10px sans-serif'; ctx.textAlign='center';
     ctx.lineWidth=3; ctx.strokeStyle='rgba(255,255,255,.9)'; ctx.strokeText(k.name||'',k.x,k.y-19);
     ctx.fillStyle=(k.id===active)?'#6c5ce7':'#243b24'; ctx.fillText(k.name||'',k.x,k.y-19);
