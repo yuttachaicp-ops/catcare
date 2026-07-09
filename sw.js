@@ -1,10 +1,10 @@
 /* CatCare AI — Service Worker v4 (network-first for app code) */
-const CACHE = 'catcare-v8';
+const CACHE = 'catcare-v9';
 const ASSETS = [
   './',
   './index.html',
-  './app.js?v=8',
-  './symptoms.js?v=8',
+  './app.js?v=9',
+  './symptoms.js?v=9',
   './manifest.json',
   './version.json',
   './icon-192.png',

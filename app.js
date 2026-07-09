@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.2.0';
+const APP_VERSION = '1.3.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -23,7 +23,7 @@ const REC_CATS = {
 /* ---------- Store ---------- */
 function freshDB(){
   return { v:1, activePetId:null, pets:[], records:[], logs:[], assessments:[],
-    reminders:[], chats:[], settings:{aiProvider:'claude', apiKey:'', model:''} };
+    reminders:[], treatments:[], chats:[], settings:{aiProvider:'claude', apiKey:'', model:''} };
 }
 /* IndexedDB wrapper (เก็บได้มากกว่า localStorage + กันพื้นที่เต็ม) */
 const IDB_NAME='catcare_db', IDB_STORE='kv';
@@ -229,6 +229,8 @@ function renderHome(){
     }).join(''):'<div class="empty">ยังไม่มีการเตือน — เพิ่มได้จากสมุดสุขภาพ (กรอกวันครั้งถัดไป)</div>'}
   </div>
 
+  ${todaysTreatments(p.id).length?`<div class="card"><h2>💊 ต้องให้วันนี้</h2>${todaysTreatments(p.id).map(t=>homeTreatRow(t)).join('')}</div>`:''}
+
   <div class="grid">
     <div class="stat"><div class="v">${recCount}</div><div class="l">บันทึกสุขภาพ</div></div>
     <div class="stat"><div class="v">${lastLog?lastLog.weight||'-':'-'}</div><div class="l">น้ำหนักล่าสุด (กก.)</div></div>
@@ -314,6 +316,7 @@ function deletePet(id){
   DB.logs=DB.logs.filter(l=>l.petId!==id);
   DB.assessments=DB.assessments.filter(a=>a.petId!==id);
   DB.reminders=DB.reminders.filter(r=>r.petId!==id);
+  DB.treatments=DB.treatments.filter(t=>t.petId!==id);
   if(DB.activePetId===id) DB.activePetId=DB.pets[0]?DB.pets[0].id:null;
   saveDB(); closeModal(); toast('ลบแล้ว'); render();
 }
@@ -614,6 +617,7 @@ function renderMore(){
   el.innerHTML=`
   <div class="seg">
     <button class="${moreSub==='guide'?'on':''}" onclick="moreTab('guide')">📖 วิธีใช้</button>
+    <button class="${moreSub==='meds'?'on':''}" onclick="moreTab('meds')">💊 ยา/รักษา</button>
     <button class="${moreSub==='report'?'on':''}" onclick="moreTab('report')">📋 รายงาน</button>
     <button class="${moreSub==='ai'?'on':''}" onclick="moreTab('ai')">🤖 AI</button>
     <button class="${moreSub==='image'?'on':''}" onclick="moreTab('image')">📷 วิเคราะห์รูป</button>
@@ -627,6 +631,7 @@ function moreTab(t){ moreSub=t; if(currentTab!=='more'){go('more');return;} $('m
 function moreBody(){
   const b=$('moreBody'); if(!b)return;
   if(moreSub==='guide') b.innerHTML=guideView();
+  else if(moreSub==='meds') b.innerHTML=medsView();
   else if(moreSub==='report') b.innerHTML=reportView();
   else if(moreSub==='ai') b.innerHTML=aiView();
   else if(moreSub==='image') b.innerHTML=imageView();
@@ -644,6 +649,7 @@ function guideView(){
     {ic:'📋',t:'รายงานสำหรับสัตวแพทย์',st:'ok',how:['เพิ่มเติม → "รายงาน"','ระบบสรุปข้อมูลให้อัตโนมัติ','กด "คัดลอกข้อความ" หรือ "บันทึกเป็น PDF" เพื่อส่งให้คุณหมอ']},
     {ic:'🔔',t:'การเตือน (วัคซีน/ยา/ตรวจสุขภาพ)',st:'ok',how:['เพิ่มเติม → "เตือน" กด "เปิดการแจ้งเตือนบนอุปกรณ์"','เพิ่มการเตือนเองได้ หรือมาจากช่อง "เตือนครั้งถัดไป" ในสมุดสุขภาพ']},
     {ic:'💾',t:'สำรอง & กู้คืนข้อมูล',st:'ok',how:['เพิ่มเติม → "ข้อมูล"','กด "ส่งออกไฟล์สำรอง" เก็บไฟล์ไว้เป็นระยะ','เปลี่ยนเครื่องแล้วใช้ "กู้คืนจากไฟล์" (ระบบสำรองอัตโนมัติก่อนเปลี่ยนแปลงทุกครั้ง)']},
+    {ic:'💊',t:'ตารางยา / การรักษา',st:'ok',how:['เพิ่มเติม → "ยา/รักษา" กด "เพิ่มยา/การรักษา"','ตั้งชื่อ ปริมาณ และรูปแบบ: ทุกวันจนครบกำหนด / ทุก ๆ N วัน / เฉพาะวันในสัปดาห์','หน้าหลักจะมีการ์ด "ต้องให้วันนี้" ให้ติ๊กเมื่อให้ยา/น้ำเกลือแล้ว']},
     {ic:'🐾',t:'รองรับสัตว์ชนิดอื่น',st:'ok',how:['ตอนเพิ่มโปรไฟล์ เลือก "ชนิดสัตว์" ได้ (แมว/สุนัข/กระต่าย/นก/อื่น ๆ)']},
     {ic:'🤖',t:'ผู้ช่วย AI ตอบคำถาม',st:'warn',how:['ใช้ได้แบบพื้นฐานออฟไลน์ทันที','ปลดล็อกเต็มรูปแบบ: เพิ่มเติม → ข้อมูล → "ตั้งค่า AI" ใส่ API key (Claude หรือ OpenAI)','จากนั้นถามคำถามสุขภาพแมวได้ที่ เพิ่มเติม → "AI"']},
     {ic:'📷',t:'วิเคราะห์รูป (ตา/หู/ผิวหนัง/แผล)',st:'warn',how:['ต้องใส่ API key ที่รองรับรูปภาพก่อน (ตั้งค่า AI)','เพิ่มเติม → "วิเคราะห์รูป" เลือกบริเวณ → อัปโหลดรูป → กดวิเคราะห์']},
@@ -850,6 +856,154 @@ async function analyzeImg(){
   }catch(e){ res.innerHTML=`<div class="result-box danger"><h3>วิเคราะห์ไม่สำเร็จ</h3><p>${esc(e.message)}</p></div>`; }
 }
 
+/* =========================================================
+   TREATMENTS / MEDICATION SCHEDULE (ตารางยา/การรักษา)
+   ========================================================= */
+function addDays(dateStr,n){ const d=new Date(dateStr); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
+function doseText(t){ return ((t.dose||'')+' '+(t.unit||'')).trim(); }
+function schedSummary(t){
+  if(t.sched==='daily') return 'ทุกวัน'+((t.perDay>1)?(' · วันละ '+t.perDay+' ครั้ง'):'');
+  if(t.sched==='interval') return 'ทุก ๆ '+(t.intervalDays||1)+' วัน';
+  if(t.sched==='weekly'){ const D=['อา','จ','อ','พ','พฤ','ศ','ส']; return 'สัปดาห์: '+(t.weekdays||[]).map(d=>D[d]).join(', '); }
+  return '';
+}
+function isScheduled(t,dateStr){
+  if(!t.startDate||!t.endDate) return false;
+  if(dateStr<t.startDate||dateStr>t.endDate) return false;
+  if(t.sched==='daily') return true;
+  if(t.sched==='interval'){ const nn=Math.max(1,t.intervalDays||1); return daysBetween(t.startDate,dateStr)%nn===0; }
+  if(t.sched==='weekly'){ return (t.weekdays||[]).includes(new Date(dateStr).getDay()); }
+  return false;
+}
+function treatmentProgress(t){
+  const total=daysBetween(t.startDate,t.endDate)+1, today=todayStr();
+  if(today<t.startDate) return 'เริ่ม '+fmtDate(t.startDate);
+  if(today>t.endDate) return 'ครบกำหนดแล้ว';
+  return 'วันที่ '+(daysBetween(t.startDate,today)+1)+'/'+total;
+}
+function todaysTreatments(petId){ const d=todayStr(); return DB.treatments.filter(t=>t.petId===petId && t.active!==false && isScheduled(t,d)); }
+function dosePills(t,dateStr){
+  const per=t.sched==='daily'?(t.perDay||1):1;
+  const cnt=(t.log&&t.log[dateStr])||0;
+  return Array.from({length:per},(_,i)=>`<button class="pill-btn" style="margin:2px 6px 2px 0;${i<cnt?'background:var(--ok);color:#fff;border-color:var(--ok)':''}" onclick="clickDose('${t.id}','${dateStr}',${i})">${i<cnt?'✓ ให้แล้ว':'ให้ยา'}</button>`).join('');
+}
+function clickDose(id,dateStr,idx){
+  const t=DB.treatments.find(x=>x.id===id); if(!t)return;
+  t.log=t.log||{};
+  const cur=t.log[dateStr]||0;
+  t.log[dateStr] = (cur>idx) ? idx : (idx+1);
+  saveDB(); render(); toast('บันทึกการให้ยาแล้ว');
+}
+function medIcon(t){ return t.kind==='น้ำเกลือ'?'💧':t.kind==='อื่นๆ'?'🩹':'💊'; }
+function homeTreatRow(t){
+  const d=todayStr(), per=t.sched==='daily'?(t.perDay||1):1, cnt=(t.log&&t.log[d])||0, done=cnt>=per;
+  return `<div class="list-item">
+    <div class="avatar" style="width:42px;height:42px;font-size:20px">${medIcon(t)}</div>
+    <div class="meta"><div class="t">${esc(t.name)} ${done?'<span class="badge ok">ครบวันนี้</span>':''}</div>
+    <div class="s">${esc(doseText(t))}${per>1?(' · '+cnt+'/'+per+' ครั้ง'):''}</div>
+    <div style="margin-top:6px">${dosePills(t,d)}</div></div></div>`;
+}
+function medsView(){
+  const p=activePet(); if(!p) return noPet();
+  const ts=DB.treatments.filter(t=>t.petId===p.id).sort((a,b)=>((a.active!==false)===(b.active!==false))?0:(a.active!==false?-1:1));
+  return `<div class="card">
+    <h2>💊 ตารางยา / การรักษา</h2>
+    <p class="muted">บันทึกยาที่ต้องให้ต่อเนื่อง เช่น ยาฆ่าเชื้อทุกวันจนครบ หรือน้ำเกลือเฉพาะบางวัน พร้อมระบุปริมาณและติ๊กเมื่อให้แล้ว</p>
+    <button class="btn primary block" onclick="openTreatmentForm()">＋ เพิ่มยา/การรักษา</button>
+  </div>
+  ${ts.length? ts.map(t=>treatmentCard(t)).join('') : '<div class="card"><div class="empty"><span class="em">💊</span>ยังไม่มีรายการ</div></div>'}`;
+}
+function treatmentCard(t){
+  const today=todayStr(), ended=today>t.endDate;
+  const dueToday = t.active!==false && !ended && isScheduled(t,today);
+  return `<div class="card">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="avatar" style="width:46px;height:46px;font-size:22px">${medIcon(t)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700">${esc(t.name)} ${t.active===false?'<span class="badge">หยุดแล้ว</span>':(ended?'<span class="badge ok">จบคอร์ส</span>':'')}</div>
+        <div class="muted">${esc(doseText(t))} · ${schedSummary(t)}</div>
+        <div class="muted">${fmtDate(t.startDate)} – ${fmtDate(t.endDate)} · ${treatmentProgress(t)}</div>
+      </div>
+    </div>
+    ${dueToday?`<div style="margin-top:10px"><div class="s muted">ให้วันนี้:</div>${dosePills(t,today)}</div>`:''}
+    ${t.note?`<div class="muted" style="margin-top:8px">📝 ${esc(t.note)}</div>`:''}
+    <div class="row" style="margin-top:10px">
+      <button class="btn ghost sm" onclick="openTreatmentDetail('${t.id}')">📅 ปฏิทิน/ประวัติ</button>
+      <button class="btn ghost sm" onclick="openTreatmentForm('${t.id}')">แก้ไข</button>
+    </div>
+  </div>`;
+}
+let _twWeekdays=[], _twEdit={};
+function openTreatmentForm(id){
+  const t=id?DB.treatments.find(x=>x.id===id):null;
+  _twEdit = t?JSON.parse(JSON.stringify(t)):{sched:'daily',perDay:1,intervalDays:2,kind:'ยา'};
+  _twWeekdays = (t&&t.weekdays)?[...t.weekdays]:[];
+  const kinds=['ยา','น้ำเกลือ','อื่นๆ'];
+  openModal(t?'แก้ไขยา/การรักษา':'เพิ่มยา/การรักษา',`
+    <label>ชื่อรายการ</label><input id="tw_name" value="${t?esc(t.name||''):''}" placeholder="เช่น ยาฆ่าเชื้อ Amoxicillin, น้ำเกลือ">
+    <label>ประเภท</label>
+    <select id="tw_kind">${kinds.map(k=>`<option ${(_twEdit.kind===k)?'selected':''}>${k}</option>`).join('')}</select>
+    <div class="grid">
+      <div><label>ปริมาณ</label><input id="tw_dose" value="${t?esc(t.dose||''):''}" placeholder="เช่น 1 หรือ 100"></div>
+      <div><label>หน่วย</label><input id="tw_unit" value="${t?esc(t.unit||''):''}" placeholder="เม็ด / ml / หน่วย"></div>
+    </div>
+    <label>รูปแบบการให้</label>
+    <select id="tw_sched" onchange="twSchedFields()">
+      <option value="daily" ${_twEdit.sched==='daily'?'selected':''}>ทุกวัน (จนครบกำหนด)</option>
+      <option value="interval" ${_twEdit.sched==='interval'?'selected':''}>ทุก ๆ N วัน (เช่น วันเว้นวัน)</option>
+      <option value="weekly" ${_twEdit.sched==='weekly'?'selected':''}>เฉพาะวันในสัปดาห์</option>
+    </select>
+    <div id="tw_schedFields"></div>
+    <div class="grid">
+      <div><label>วันเริ่ม</label><input id="tw_start" type="date" value="${t?t.startDate:todayStr()}"></div>
+      <div><label>วันสิ้นสุด</label><input id="tw_end" type="date" value="${t?t.endDate||'':''}"></div>
+    </div>
+    <label>บันทึกเพิ่มเติม</label><textarea id="tw_note" placeholder="เช่น ให้หลังอาหาร, ฉีดใต้ผิวหนัง">${t?esc(t.note||''):''}</textarea>
+    <button class="btn primary block" style="margin-top:12px" onclick="saveTreatment('${id||''}')">บันทึก</button>
+    ${t?`<button class="btn ghost block" style="margin-top:8px" onclick="stopTreatment('${id}')">${t.active===false?'กลับมาใช้งาน':'หยุดคอร์สนี้'}</button>`:''}
+    ${t?`<button class="btn danger block" style="margin-top:8px" onclick="delTreatment('${id}')">ลบ</button>`:''}
+  `);
+  twSchedFields();
+}
+function twSchedFields(){
+  const v=$('tw_sched').value, c=$('tw_schedFields'); if(!c)return;
+  if(v==='daily') c.innerHTML='<label>ให้กี่ครั้งต่อวัน</label><input id="tw_perDay" type="number" min="1" value="'+(_twEdit.perDay||1)+'">';
+  else if(v==='interval') c.innerHTML='<label>ให้ทุก ๆ กี่วัน (2 = วันเว้นวัน)</label><input id="tw_interval" type="number" min="1" value="'+(_twEdit.intervalDays||2)+'">';
+  else c.innerHTML='<label>เลือกวันที่ต้องให้</label><div>'+['อา','จ','อ','พ','พฤ','ศ','ส'].map((d,i)=>'<span class="chip '+(_twWeekdays.includes(i)?'on':'')+'" onclick="twToggleWd('+i+')">'+d+'</span>').join('')+'</div>';
+}
+function twToggleWd(i){ const k=_twWeekdays.indexOf(i); if(k<0)_twWeekdays.push(i); else _twWeekdays.splice(k,1); twSchedFields(); }
+function saveTreatment(id){
+  const name=$('tw_name').value.trim(); if(!name){ toast('กรอกชื่อรายการ'); return; }
+  const sched=$('tw_sched').value;
+  const start=$('tw_start').value||todayStr();
+  const end=$('tw_end').value||start;
+  if(end<start){ toast('วันสิ้นสุดต้องไม่ก่อนวันเริ่ม'); return; }
+  if(sched==='weekly' && !_twWeekdays.length){ toast('เลือกวันในสัปดาห์อย่างน้อย 1 วัน'); return; }
+  autoBackup();
+  const p=activePet();
+  const data={ petId:p.id, name, kind:$('tw_kind').value, dose:$('tw_dose').value.trim(), unit:$('tw_unit').value.trim(),
+    sched, perDay:parseInt(($('tw_perDay')||{}).value)||1, intervalDays:parseInt(($('tw_interval')||{}).value)||2,
+    weekdays:[..._twWeekdays].sort((a,b)=>a-b), startDate:start, endDate:end, note:$('tw_note').value.trim() };
+  if(id){ Object.assign(DB.treatments.find(x=>x.id===id), data); }
+  else { data.log={}; data.active=true; DB.treatments.push(Object.assign({id:uid()},data)); }
+  saveDB(); closeModal(); toast('บันทึกแล้ว'); render();
+}
+function stopTreatment(id){ const t=DB.treatments.find(x=>x.id===id); if(!t)return; autoBackup(); t.active=(t.active===false); saveDB(); closeModal(); render(); toast(t.active?'กลับมาใช้งานแล้ว':'หยุดคอร์สแล้ว'); }
+function delTreatment(id){ if(!confirm('ลบรายการนี้?'))return; autoBackup(); DB.treatments=DB.treatments.filter(t=>t.id!==id); saveDB(); closeModal(); render(); toast('ลบแล้ว'); }
+function openTreatmentDetail(id){
+  const t=DB.treatments.find(x=>x.id===id); if(!t)return;
+  const per=t.sched==='daily'?(t.perDay||1):1;
+  const dates=[]; let cur=t.startDate, guard=0;
+  while(cur<=t.endDate && guard<400){ if(isScheduled(t,cur)) dates.push(cur); cur=addDays(cur,1); guard++; }
+  openModal(t.name, `
+    <div class="muted" style="margin-bottom:8px">${esc(doseText(t))} · ${schedSummary(t)} · ${treatmentProgress(t)}</div>
+    ${dates.length?dates.map(d=>{
+      const cnt=(t.log&&t.log[d])||0, done=cnt>=per;
+      return `<div class="list-item"><div class="meta"><div class="t">${fmtDate(d)} ${done?'<span class="badge ok">ให้แล้ว</span>':(d<todayStr()?'<span class="badge danger">ยังไม่ได้ให้</span>':'')}</div></div><div>${dosePills(t,d)}</div></div>`;
+    }).join(''):'<div class="empty">ไม่มีวันในตาราง</div>'}
+  `);
+}
+
 /* ---------- Notifications ---------- */
 function notifView(){
   const p=activePet(); if(!p) return noPet();
@@ -898,10 +1052,17 @@ function notify(title, body){
 }
 function checkDueNotifs(){
   if(!('Notification' in window)||Notification.permission!=='granted')return;
-  DB.pets.forEach(p=>upcomingReminders(p.id).forEach(r=>{
-    const d=daysBetween(todayStr(),r.dueDate);
-    if(d===0||d===1) notify('CatCare AI 🐾', p.name+': '+r.title+(d===0?' (วันนี้)':' (พรุ่งนี้)'));
-  }));
+  const today=todayStr();
+  DB.pets.forEach(p=>{
+    upcomingReminders(p.id).forEach(r=>{
+      const d=daysBetween(today,r.dueDate);
+      if(d===0||d===1) notify('CatCare AI 🐾', p.name+': '+r.title+(d===0?' (วันนี้)':' (พรุ่งนี้)'));
+    });
+    todaysTreatments(p.id).forEach(t=>{
+      const per=t.sched==='daily'?(t.perDay||1):1; const cnt=(t.log&&t.log[today])||0;
+      if(cnt<per) notify('💊 ถึงเวลาให้ยา', p.name+': '+t.name+(doseText(t)?(' '+doseText(t)):''));
+    });
+  });
 }
 
 /* ---------- Backup & Restore ---------- */
