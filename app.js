@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -172,7 +172,7 @@ function render(){
   $('petSwitch').textContent = p ? (SPECIES[p.species]||SPECIES.other).emoji+' '+p.name+' ▾' : 'เพิ่มแมว ＋';
   const fab=$('fab');
   fab.classList.toggle('hidden', currentTab==='assess'||currentTab==='more');
-  if(currentTab==='home'){ renderHome(); if(typeof requestAnimationFrame==='function') requestAnimationFrame(startMap); }
+  if(currentTab==='home') renderHome();
   else if(currentTab==='book') renderBook();
   else if(currentTab==='assess') renderAssess();
   else if(currentTab==='dash') renderDash();
@@ -202,10 +202,6 @@ function renderHome(){
   const recCount = DB.records.filter(r=>r.petId===p.id).length;
 
   el.innerHTML = `
-  <div class="card" style="padding:0;overflow:hidden;position:relative">
-    <canvas id="mapCanvas"></canvas>
-    <div style="position:absolute;left:10px;top:8px;font-size:11px;font-weight:700;color:#243b24;background:rgba(255,255,255,.65);padding:2px 8px;border-radius:10px">🌳 สวนของน้อง ๆ · แตะตัวละครเพื่อเลือก</div>
-  </div>
   <div class="card" style="display:flex;gap:14px;align-items:center">
     ${petAvatar(p,true)}
     <div style="flex:1;min-width:0">
@@ -332,12 +328,6 @@ function openPetForm(id){
       <label style="display:inline-block;margin-top:8px;color:var(--brand);cursor:pointer">
         📷 เลือกรูป<input type="file" accept="image/*" style="display:none" onchange="onPetPhoto(this)">
       </label>
-    </div>
-    <label>🎮 ภาพตัวละครในแมป (pixel sprite PNG) — ไม่บังคับ</label>
-    <div id="petSprWrap" style="text-align:center;margin-bottom:6px">${_petSprite?`<img src="${_petSprite}" style="height:52px;image-rendering:pixelated;background:#a7d08c;border-radius:8px;padding:2px">`:'<span class="muted">ยังไม่มี — จะใช้แมวพิกเซลมาตรฐาน · แนะนำ 32×32 ต่อเฟรม เรียงแนวนอน หันขวา</span>'}</div>
-    <div class="row" style="align-items:center;gap:10px;margin-top:2px">
-      <label style="display:inline-block;color:var(--brand);cursor:pointer;margin:0">🎨 เลือกไฟล์ sprite<input type="file" accept="image/png,image/*" style="display:none" onchange="onPetSprite(this)"></label>
-      <span class="muted">จำนวนเฟรม:</span><input id="f_sprFrames" type="number" min="1" max="12" value="${(p&&p.spriteFrames)||4}" style="width:70px">
     </div>
     <label>ชนิดสัตว์</label><select id="f_species">${spOpts}</select>
     <label>ชื่อ *</label><input id="f_name" value="${p?esc(p.name):''}" placeholder="เช่น เหมียว">
@@ -1156,13 +1146,6 @@ function backupView(){
     <label>API Key</label><input id="s_key" type="password" value="${esc(st.apiKey||'')}" placeholder="วาง API key ที่นี่">
     <label>ชื่อโมเดล (ไม่บังคับ)</label><input id="s_model" value="${esc(st.model||'')}" placeholder="เช่น claude-3-5-haiku-20241022">
     <button class="btn primary block" style="margin-top:10px" onclick="saveSettings()">บันทึกการตั้งค่า</button>
-  </div>
-  <div class="card">
-    <h2>🖼️ พื้นหลังแมป (สวนพิกเซล)</h2>
-    <p class="muted">อัปโหลดภาพฉากพิกเซลของคุณเอง (แนะนำแนวนอน ~2:1) แมวจะเดินบนทางด้านล่าง</p>
-    <div id="mapBgWrap" style="text-align:center;margin-bottom:6px">${(st.mapBg)?`<img src="${st.mapBg}" style="max-width:100%;border-radius:10px">`:'<span class="muted">ยังไม่ได้ตั้ง — ใช้สวนวาดมาตรฐาน</span>'}</div>
-    <label class="btn ghost block" style="cursor:pointer">🖼️ เลือกภาพพื้นหลัง<input type="file" accept="image/*" style="display:none" onchange="onMapBg(this)"></label>
-    ${st.mapBg?`<button class="btn danger block" style="margin-top:8px" onclick="removeMapBg()">เอาพื้นหลังออก</button>`:''}
   </div>
   <div class="card">
     <h2>ℹ️ เกี่ยวกับ</h2>
