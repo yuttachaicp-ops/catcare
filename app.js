@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.5.0';
+const APP_VERSION = '1.6.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -265,14 +265,61 @@ function upcomingReminders(petId){
 
 /* ---------- Pet form ---------- */
 let _petPhoto=null, _petSprite=null;
+function floodClearBg(id, thresh){
+  const data=id.data, W=id.width, H=id.height, N=W*H;
+  const vis=new Uint8Array(N), stack=[];
+  const isBg=(i)=>{ const p=i*4; return data[p+3]>10 && data[p]>=255-thresh && data[p+1]>=255-thresh && data[p+2]>=255-thresh; };
+  const seed=(x,y)=>{ const i=y*W+x; if(!vis[i]&&isBg(i)){ vis[i]=1; stack.push(i); } };
+  for(let x=0;x<W;x++){ seed(x,0); seed(x,H-1); }
+  for(let y=0;y<H;y++){ seed(0,y); seed(W-1,y); }
+  while(stack.length){ const i=stack.pop(); data[i*4+3]=0; const x=i%W, y=(i/W)|0;
+    if(x>0){const j=i-1; if(!vis[j]&&isBg(j)){vis[j]=1;stack.push(j);}}
+    if(x<W-1){const j=i+1; if(!vis[j]&&isBg(j)){vis[j]=1;stack.push(j);}}
+    if(y>0){const j=i-W; if(!vis[j]&&isBg(j)){vis[j]=1;stack.push(j);}}
+    if(y<H-1){const j=i+W; if(!vis[j]&&isBg(j)){vis[j]=1;stack.push(j);}}
+  }
+}
+function contentBBox(id, x0, x1){
+  const data=id.data, W=id.width, H=id.height;
+  let minX=1e9,minY=1e9,maxX=-1,maxY=-1;
+  for(let y=0;y<H;y++){ const row=y*W; for(let x=x0;x<x1;x++){ if(data[(row+x)*4+3]>20){ if(x<minX)minX=x; if(x>maxX)maxX=x; if(y<minY)minY=y; if(y>maxY)maxY=y; } } }
+  if(maxX<0) return null;
+  return {x:minX,y:minY,w:maxX-minX+1,h:maxY-minY+1};
+}
+function processSpriteImage(img, frames){
+  frames=Math.max(1, frames||4);
+  const W=img.naturalWidth||img.width, H=img.naturalHeight||img.height;
+  const cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const cx=cv.getContext('2d'); if(!cx) return null; cx.imageSmoothingEnabled=false; cx.drawImage(img,0,0);
+  let id; try{ id=cx.getImageData(0,0,W,H); }catch(e){ return null; }
+  floodClearBg(id, 32);
+  cx.putImageData(id,0,0);
+  const fw=Math.floor(W/frames); const boxes=[]; let maxW=1,maxH=1;
+  for(let i=0;i<frames;i++){ const b=contentBBox(id, i*fw, (i===frames-1?W:(i+1)*fw)); boxes.push(b); if(b){ if(b.w>maxW)maxW=b.w; if(b.h>maxH)maxH=b.h; } }
+  const cell=64, scale=Math.min((cell-6)/maxH, (cell-6)/maxW);
+  const out=document.createElement('canvas'); out.width=cell*frames; out.height=cell;
+  const oc=out.getContext('2d'); oc.imageSmoothingEnabled=false;
+  for(let i=0;i<frames;i++){ const b=boxes[i]; if(!b) continue;
+    const dw=Math.max(1,Math.round(b.w*scale)), dh=Math.max(1,Math.round(b.h*scale));
+    const dx=i*cell+Math.round((cell-dw)/2), dy=cell-dh-3;
+    oc.drawImage(cv, b.x,b.y,b.w,b.h, dx,dy,dw,dh);
+  }
+  try{ return out.toDataURL('image/png'); }catch(e){ return null; }
+}
 function onPetSprite(input){
   if(!input.files[0]) return;
   const f=input.files[0];
-  if(f.size>3*1024*1024){ toast('ไฟล์ใหญ่เกินไป (ควร < 3MB)'); return; }
+  if(f.size>6*1024*1024){ toast('ไฟล์ใหญ่เกินไป (ควร < 6MB)'); return; }
+  const frames=parseInt(($('f_sprFrames')||{}).value)||4;
+  toast('กำลังประมวลผลรูป…');
   const r=new FileReader();
   r.onerror=()=>toast('อ่านไฟล์ไม่สำเร็จ');
-  r.onload=e=>{ _petSprite=e.target.result; const w=$('petSprWrap'); if(w) w.innerHTML='<img src="'+_petSprite+'" style="height:52px;image-rendering:pixelated;background:#a7d08c;border-radius:8px;padding:2px">'; };
-  r.readAsDataURL(f);   // เก็บ PNG ดิบ คงความโปร่งใส/คมชัดของพิกเซล
+  r.onload=e=>{ const img=new Image();
+    img.onload=()=>{ const out=processSpriteImage(img,frames); _petSprite=out||e.target.result;
+      const w=$('petSprWrap'); if(w) w.innerHTML='<img src="'+_petSprite+'" style="height:56px;image-rendering:pixelated;background:#a7d08c;border-radius:8px;padding:2px">'; toast('พร้อมใช้ ('+frames+' เฟรม)'); };
+    img.onerror=()=>toast('โหลดรูปไม่ได้'); img.src=e.target.result;
+  };
+  r.readAsDataURL(f);
 }
 function openPetForm(id){
   const p = id ? DB.pets.find(x=>x.id===id) : null;
@@ -288,7 +335,10 @@ function openPetForm(id){
     </div>
     <label>🎮 ภาพตัวละครในแมป (pixel sprite PNG) — ไม่บังคับ</label>
     <div id="petSprWrap" style="text-align:center;margin-bottom:6px">${_petSprite?`<img src="${_petSprite}" style="height:52px;image-rendering:pixelated;background:#a7d08c;border-radius:8px;padding:2px">`:'<span class="muted">ยังไม่มี — จะใช้แมวพิกเซลมาตรฐาน · แนะนำ 32×32 ต่อเฟรม เรียงแนวนอน หันขวา</span>'}</div>
-    <label style="display:inline-block;color:var(--brand);cursor:pointer">🎨 เลือกไฟล์ sprite<input type="file" accept="image/png,image/*" style="display:none" onchange="onPetSprite(this)"></label>
+    <div class="row" style="align-items:center;gap:10px;margin-top:2px">
+      <label style="display:inline-block;color:var(--brand);cursor:pointer;margin:0">🎨 เลือกไฟล์ sprite<input type="file" accept="image/png,image/*" style="display:none" onchange="onPetSprite(this)"></label>
+      <span class="muted">จำนวนเฟรม:</span><input id="f_sprFrames" type="number" min="1" max="12" value="${(p&&p.spriteFrames)||4}" style="width:70px">
+    </div>
     <label>ชนิดสัตว์</label><select id="f_species">${spOpts}</select>
     <label>ชื่อ *</label><input id="f_name" value="${p?esc(p.name):''}" placeholder="เช่น เหมียว">
     <div class="grid">
@@ -319,7 +369,7 @@ function savePet(id){
   autoBackup();
   const data={ species:$('f_species').value, name, birthdate:$('f_birth').value,
     sex:$('f_sex').value, breed:$('f_breed').value.trim(), weight:parseFloat($('f_weight').value)||'',
-    chronic:$('f_chronic').value.trim(), allergies:$('f_allergy').value.trim(), photo:_petPhoto, sprite:_petSprite };
+    chronic:$('f_chronic').value.trim(), allergies:$('f_allergy').value.trim(), photo:_petPhoto, sprite:_petSprite, spriteFrames:parseInt(($('f_sprFrames')||{}).value)||4 };
   if(id){ const p=DB.pets.find(x=>x.id===id); Object.assign(p,data); }
   else{ const np=Object.assign({id:uid(),createdAt:Date.now()},data); DB.pets.push(np); DB.activePetId=np.id;
         if(data.weight) DB.logs.push({id:uid(),petId:np.id,date:todayStr(),weight:data.weight}); }
@@ -1108,6 +1158,13 @@ function backupView(){
     <button class="btn primary block" style="margin-top:10px" onclick="saveSettings()">บันทึกการตั้งค่า</button>
   </div>
   <div class="card">
+    <h2>🖼️ พื้นหลังแมป (สวนพิกเซล)</h2>
+    <p class="muted">อัปโหลดภาพฉากพิกเซลของคุณเอง (แนะนำแนวนอน ~2:1) แมวจะเดินบนทางด้านล่าง</p>
+    <div id="mapBgWrap" style="text-align:center;margin-bottom:6px">${(st.mapBg)?`<img src="${st.mapBg}" style="max-width:100%;border-radius:10px">`:'<span class="muted">ยังไม่ได้ตั้ง — ใช้สวนวาดมาตรฐาน</span>'}</div>
+    <label class="btn ghost block" style="cursor:pointer">🖼️ เลือกภาพพื้นหลัง<input type="file" accept="image/*" style="display:none" onchange="onMapBg(this)"></label>
+    ${st.mapBg?`<button class="btn danger block" style="margin-top:8px" onclick="removeMapBg()">เอาพื้นหลังออก</button>`:''}
+  </div>
+  <div class="card">
     <h2>ℹ️ เกี่ยวกับ</h2>
     <p class="muted">CatCare AI v${APP_VERSION} · ผู้ช่วยดูแลสุขภาพแมวส่วนตัว<br>
     ออกแบบให้รองรับสัตว์ชนิดอื่นในอนาคต · ทำงานออฟไลน์ (PWA)<br>
@@ -1146,6 +1203,24 @@ function saveSettings(){
   DB.settings.model=$('s_model').value.trim();
   saveDB(); toast('บันทึกการตั้งค่าแล้ว'); moreBody();
 }
+
+/* ---------- Map background ---------- */
+function onMapBg(input){
+  if(!input.files[0]) return; const f=input.files[0];
+  const r=new FileReader();
+  r.onerror=()=>toast('อ่านไฟล์ไม่สำเร็จ');
+  r.onload=e=>{ const img=new Image();
+    img.onload=()=>{ const maxW=1280; let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+      if(w>maxW){ h=Math.round(h*maxW/w); w=maxW; }
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h; const cx=cv.getContext('2d');
+      let out; if(cx){ cx.imageSmoothingEnabled=false; cx.drawImage(img,0,0,w,h); try{ out=cv.toDataURL('image/jpeg',0.85); }catch(_){ out=e.target.result; } } else out=e.target.result;
+      DB.settings.mapBg=out; if(typeof _map!=='undefined'&&_map) _map.bgSrc=null; saveDB(); toast('ตั้งพื้นหลังแมปแล้ว'); moreBody();
+    };
+    img.onerror=()=>toast('โหลดรูปไม่ได้'); img.src=e.target.result;
+  };
+  r.readAsDataURL(f);
+}
+function removeMapBg(){ DB.settings.mapBg=null; if(typeof _map!=='undefined'&&_map) _map.bgSrc=null; saveDB(); toast('เอาพื้นหลังออกแล้ว'); moreBody(); }
 
 /* ---------- Modal ---------- */
 function openModal(title, html){
@@ -1210,6 +1285,9 @@ function startMap(){
   _map.deco=[];
   const rnd=(a,b)=>a+Math.random()*(b-a);
   for(let i=0;i<7;i++) _map.deco.push({x:rnd(6,cssW-20),y:rnd(24,H-16),t:Math.random()<.5?'bush':'flower'});
+  const mb=(DB.settings&&DB.settings.mapBg)||null;
+  if(mb){ if(_map.bgSrc!==mb){ _map.bgReady=false; _map.bgSrc=mb; _map.bgImg=new Image(); _map.bgImg.onload=()=>{_map.bgReady=true;}; _map.bgImg.src=mb; } }
+  else { _map.bgImg=null; _map.bgReady=false; _map.bgSrc=null; }
   syncCats();
   c.onclick=(e)=>{
     const r=c.getBoundingClientRect();
@@ -1220,17 +1298,24 @@ function startMap(){
   if(_map.raf) cancelAnimationFrame(_map.raf);
   loopMap();
 }
+function pathBand(h){ return (DB.settings&&DB.settings.mapBg) ? {t:h*0.60, r:h*0.34} : {t:46, r:h-58}; }
 function syncCats(){
   const prev={}; _map.cats.forEach(k=>prev[k.id]=k);
   _map.cats=(DB.pets||[]).map(pet=>{
     const ex=prev[pet.id];
     if(ex){ ex.name=pet.name; ex.color=catColor(pet); ex.spr=pet.sprite||null; return ex; }
     return { id:pet.id, name:pet.name, color:catColor(pet), spr:pet.sprite||null,
-      x:20+Math.random()*(_map.w-40), y:50+Math.random()*(_map.h-70),
+      x:20+Math.random()*(_map.w-40), y:(pathBand(_map.h).t)+Math.random()*(pathBand(_map.h).r),
       tx:0, ty:0, dir:1, t:Math.random()*100, next:0, moving:false, step:false };
   });
 }
 function drawMapBg(ctx,w,h){
+  if(_map.bgImg && _map.bgReady){
+    const iw=_map.bgImg.naturalWidth||_map.bgImg.width||w, ih=_map.bgImg.naturalHeight||_map.bgImg.height||h;
+    const dw=w, dh=w*ih/iw; ctx.imageSmoothingEnabled=false;
+    ctx.drawImage(_map.bgImg,0,Math.round(h-dh),Math.round(dw),Math.round(dh));
+    return;
+  }
   ctx.fillStyle='#a7d08c'; ctx.fillRect(0,0,w,h);
   const T=18;
   for(let y=0;y<h;y+=T) for(let x=0;x<w;x+=T){
@@ -1287,7 +1372,7 @@ function loopMap(){
   const active=DB.activePetId;
   _map.cats.forEach(k=>{
     k.t++;
-    if(k.t>=k.next){ k.next=k.t + 50 + Math.random()*140; k.tx=16+Math.random()*(w-32); k.ty=46+Math.random()*(h-56); }
+    if(k.t>=k.next){ const pb=pathBand(h); k.next=k.t + 50 + Math.random()*140; k.tx=16+Math.random()*(w-32); k.ty=pb.t+Math.random()*pb.r; }
     const dx=k.tx-k.x, dy=k.ty-k.y, dist=Math.hypot(dx,dy)||1;
     if(dist>3){ const sp=0.7; k.x+=dx/dist*sp; k.y+=dy/dist*sp; k.dir=dx<0?-1:1; k.moving=true; k.step=(Math.floor(k.t/7)%2===0); }
     else k.moving=false;
