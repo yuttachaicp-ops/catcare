@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.3.0';
+const APP_VERSION = '1.4.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -172,7 +172,7 @@ function render(){
   $('petSwitch').textContent = p ? (SPECIES[p.species]||SPECIES.other).emoji+' '+p.name+' ▾' : 'เพิ่มแมว ＋';
   const fab=$('fab');
   fab.classList.toggle('hidden', currentTab==='assess'||currentTab==='more');
-  if(currentTab==='home') renderHome();
+  if(currentTab==='home'){ renderHome(); if(typeof requestAnimationFrame==='function') requestAnimationFrame(startMap); }
   else if(currentTab==='book') renderBook();
   else if(currentTab==='assess') renderAssess();
   else if(currentTab==='dash') renderDash();
@@ -202,6 +202,10 @@ function renderHome(){
   const recCount = DB.records.filter(r=>r.petId===p.id).length;
 
   el.innerHTML = `
+  <div class="card" style="padding:0;overflow:hidden;position:relative">
+    <canvas id="mapCanvas"></canvas>
+    <div style="position:absolute;left:10px;top:8px;font-size:11px;font-weight:700;color:#243b24;background:rgba(255,255,255,.65);padding:2px 8px;border-radius:10px">🌳 สวนของน้อง ๆ · แตะตัวละครเพื่อเลือก</div>
+  </div>
   <div class="card" style="display:flex;gap:14px;align-items:center">
     ${petAvatar(p,true)}
     <div style="flex:1;min-width:0">
@@ -1164,6 +1168,103 @@ async function checkUpdate(){
 }
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkUpdate(); });
 setTimeout(checkUpdate, 2500);
+
+/* =========================================================
+   PIXEL MAP (สวนพิกเซล + แมวเดินเล่น)
+   ========================================================= */
+let _map={ raf:null, cats:[], deco:null, w:0, h:0 };
+function catColor(pet){
+  const pal=['#f4a261','#e9c46a','#e8e5da','#b08968','#9aa0a6','#f7b7c2','#3a3a44','#d9a066'];
+  let hsh=0; const s=(pet&&pet.id)||''; for(let i=0;i<s.length;i++) hsh=(hsh*31+s.charCodeAt(i))>>>0;
+  return pal[hsh%pal.length];
+}
+function shade(hex,amt){
+  if(hex[0]!=='#') return hex;
+  let nn=parseInt(hex.slice(1),16);
+  let r=(nn>>16)+amt, g=((nn>>8)&255)+amt, b=(nn&255)+amt;
+  r=Math.max(0,Math.min(255,r)); g=Math.max(0,Math.min(255,g)); b=Math.max(0,Math.min(255,b));
+  return 'rgb('+r+','+g+','+b+')';
+}
+function startMap(){
+  const c=document.getElementById('mapCanvas'); if(!c) return;
+  const ctx = c.getContext && c.getContext('2d'); if(!ctx) return;
+  const cssW = c.clientWidth || 320, H = 180;
+  const DPR = Math.min(2, window.devicePixelRatio||1);
+  c.width = Math.round(cssW*DPR); c.height = Math.round(H*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0); ctx.imageSmoothingEnabled=false;
+  _map.ctx=ctx; _map.w=cssW; _map.h=H;
+  // decorations (static per size)
+  _map.deco=[];
+  const rnd=(a,b)=>a+Math.random()*(b-a);
+  for(let i=0;i<7;i++) _map.deco.push({x:rnd(6,cssW-20),y:rnd(24,H-16),t:Math.random()<.5?'bush':'flower'});
+  syncCats();
+  c.onclick=(e)=>{
+    const r=c.getBoundingClientRect();
+    const x=e.clientX-r.left, y=e.clientY-r.top;
+    const hit=_map.cats.slice().reverse().find(k=>Math.abs(k.x-x)<20 && Math.abs(k.y-y)<24);
+    if(hit && hit.id!==DB.activePetId) switchPet(hit.id);
+  };
+  if(_map.raf) cancelAnimationFrame(_map.raf);
+  loopMap();
+}
+function syncCats(){
+  const prev={}; _map.cats.forEach(k=>prev[k.id]=k);
+  _map.cats=(DB.pets||[]).map(pet=>{
+    const ex=prev[pet.id];
+    if(ex){ ex.name=pet.name; ex.color=catColor(pet); return ex; }
+    return { id:pet.id, name:pet.name, color:catColor(pet),
+      x:20+Math.random()*(_map.w-40), y:50+Math.random()*(_map.h-70),
+      tx:0, ty:0, dir:1, t:Math.random()*100, next:0, moving:false, step:false };
+  });
+}
+function drawMapBg(ctx,w,h){
+  ctx.fillStyle='#a7d08c'; ctx.fillRect(0,0,w,h);
+  const T=18;
+  for(let y=0;y<h;y+=T) for(let x=0;x<w;x+=T){
+    if(((x/T|0)+(y/T|0))%2===0){ ctx.fillStyle='rgba(255,255,255,.05)'; ctx.fillRect(x,y,T,T); }
+  }
+  // pond
+  ctx.fillStyle='#7fb7d6'; ctx.beginPath(); ctx.ellipse(w-46,h-30,30,16,0,0,7); ctx.fill();
+  ctx.fillStyle='#bfe3f5'; ctx.beginPath(); ctx.ellipse(w-53,h-34,10,4,0,0,7); ctx.fill();
+  // decorations
+  (_map.deco||[]).forEach(d=>{
+    if(d.t==='bush'){ ctx.fillStyle='#5f9e56'; ctx.fillRect(d.x-6,d.y-4,12,8); ctx.fillRect(d.x-3,d.y-8,6,6); }
+    else { ctx.fillStyle='#e76f9e'; ctx.fillRect(d.x-1,d.y-3,2,2); ctx.fillStyle='#f6c445'; ctx.fillRect(d.x,d.y-2,1,1); ctx.fillStyle='#3f8f4f'; ctx.fillRect(d.x,d.y-1,1,3); }
+  });
+}
+function drawCat(ctx,cx,cy,color,dir,walk){
+  const u=3; ctx.save(); ctx.translate(Math.round(cx),Math.round(cy)); ctx.scale(dir,1);
+  ctx.fillStyle='rgba(0,0,0,.18)'; ctx.beginPath(); ctx.ellipse(0,0,10,3,0,0,7); ctx.fill();
+  const dark=shade(color,-35);
+  const P=(x,y,w,hh,cc)=>{ ctx.fillStyle=cc; ctx.fillRect(x*u,y*u,w*u,hh*u); };
+  P(-5,-1,1,1+(walk?1:0),dark);
+  P( 2,-1,1,1+(walk?0:1),dark);
+  P(-6,-5,9,4,color);
+  P(-7,-6,1,1,color); P(-8,-7-(walk?1:0),1,2,color);
+  P(3,-9,5,5,color);
+  P(3,-11,1,2,color); P(6,-11,1,2,color);
+  P(6,-7,1,1,'#1e2233'); P(8,-6,1,1,'#e07a9a');
+  ctx.restore();
+}
+function loopMap(){
+  const ctx=_map.ctx, w=_map.w, h=_map.h;
+  if(!ctx || currentTab!=='home' || !document.getElementById('mapCanvas')){ _map.raf=null; return; }
+  drawMapBg(ctx,w,h);
+  const active=DB.activePetId;
+  _map.cats.forEach(k=>{
+    k.t++;
+    if(k.t>=k.next){ k.next=k.t + 50 + Math.random()*140; k.tx=16+Math.random()*(w-32); k.ty=46+Math.random()*(h-56); }
+    const dx=k.tx-k.x, dy=k.ty-k.y, dist=Math.hypot(dx,dy)||1;
+    if(dist>3){ const sp=0.7; k.x+=dx/dist*sp; k.y+=dy/dist*sp; k.dir=dx<0?-1:1; k.moving=true; k.step=(Math.floor(k.t/7)%2===0); }
+    else k.moving=false;
+    drawCat(ctx,k.x,k.y,k.color,k.dir,k.moving&&k.step);
+    ctx.font='700 10px sans-serif'; ctx.textAlign='center';
+    ctx.lineWidth=3; ctx.strokeStyle='rgba(255,255,255,.9)'; ctx.strokeText(k.name||'',k.x,k.y-19);
+    ctx.fillStyle=(k.id===active)?'#6c5ce7':'#243b24'; ctx.fillText(k.name||'',k.x,k.y-19);
+    if(k.id===active){ ctx.fillStyle='#6c5ce7'; ctx.fillRect(k.x-1,k.y-30,2,2); }
+  });
+  _map.raf=requestAnimationFrame(loopMap);
+}
 
 /* ---------- init ---------- */
 (async()=>{ await loadDBInit(); render(); setTimeout(checkDueNotifs, 1500); })();
