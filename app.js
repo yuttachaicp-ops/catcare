@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.12.0';
+const APP_VERSION = '1.13.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -833,8 +833,73 @@ function reportView(){
     <div class="row" style="margin-top:10px">
       <button class="btn primary" onclick="copyReport()">📄 คัดลอกข้อความ</button>
       <button class="btn ghost" onclick="printReport()">🖨️ บันทึกเป็น PDF</button>
+      <button class="btn ghost" onclick="openShare()">🔗 ลิงก์แชร์ (อ่านอย่างเดียว)</button>
     </div>
   </div>`;
+}
+let _shareLink='';
+function utf8ToB64(str){ const b=new TextEncoder().encode(str); let bin=''; const CH=0x8000; for(let i=0;i<b.length;i+=CH){ bin+=String.fromCharCode.apply(null,b.subarray(i,i+CH)); } return btoa(bin); }
+function b64ToUtf8(b64){ const bin=atob(b64); const b=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) b[i]=bin.charCodeAt(i); return new TextDecoder().decode(b); }
+function petShareData(p){
+  const strip=o=>{ const c=Object.assign({},o); delete c.photo; return c; };
+  return { v:1, ts:Date.now(),
+    pet:{ name:p.name, species:p.species, breed:p.breed, birthdate:p.birthdate, sex:p.sex, weight:p.weight, chronic:p.chronic, allergies:p.allergies },
+    records:DB.records.filter(r=>r.petId===p.id).map(strip),
+    logs:DB.logs.filter(l=>l.petId===p.id),
+    treatments:DB.treatments.filter(t=>t.petId===p.id),
+    bloodTests:DB.bloodTests.filter(t=>t.petId===p.id),
+    assessments:DB.assessments.filter(a=>a.petId===p.id)
+  };
+}
+function makeShareLink(p){ const json=JSON.stringify(petShareData(p)); return location.origin+location.pathname+'#share='+encodeURIComponent(utf8ToB64(json)); }
+function openShare(){
+  const p=activePet(); if(!p){ toast('เลือกแมวก่อน'); return; }
+  _shareLink=makeShareLink(p);
+  const long=_shareLink.length>6000;
+  openModal('🔗 แชร์ข้อมูล '+esc(p.name), `
+    <p class="muted">ลิงก์นี้ "อ่านอย่างเดียว" ฝังข้อมูล ณ ตอนนี้ (ไม่รวมรูปภาพ เพื่อให้ลิงก์สั้น) ใครเปิดก็เห็นข้อมูลแมวตัวนี้ ไม่ต้องล็อกอิน — เป็นภาพนิ่ง ไม่อัปเดตย้อนหลัง</p>
+    <textarea id="shareLink" style="min-height:96px;font-size:12px" readonly>${esc(_shareLink)}</textarea>
+    <div class="row" style="margin-top:8px">
+      <button class="btn primary" onclick="copyShareLink()">📋 คัดลอกลิงก์</button>
+      ${navigator.share?'<button class="btn ghost" onclick="nativeShareLink()">แชร์…</button>':''}
+    </div>
+    ${long?'<div class="notice" style="margin-top:8px">ข้อมูลค่อนข้างเยอะ ลิงก์จึงยาว บางแอปแชตอาจตัดลิงก์ — ถ้าส่งให้สัตวแพทย์แนะนำใช้ "บันทึกเป็น PDF" จะชัวร์กว่า</div>':''}
+  `);
+}
+function copyShareLink(){ const t=$('shareLink'); if(t){t.select();} (navigator.clipboard?navigator.clipboard.writeText(_shareLink):Promise.reject()).then(()=>toast('คัดลอกลิงก์แล้ว')).catch(()=>{ try{document.execCommand('copy');toast('คัดลอกแล้ว');}catch(e){toast('คัดลอกไม่ได้ ให้กดค้างที่ลิงก์');} }); }
+function nativeShareLink(){ if(navigator.share) navigator.share({ title:'CatCare AI', text:'ข้อมูลสุขภาพแมว', url:_shareLink }).catch(()=>{}); }
+function checkShareLink(){
+  const h=location.hash||''; const m=h.match(/#share=(.+)/); if(!m) return false;
+  let d; try{ d=JSON.parse(b64ToUtf8(decodeURIComponent(m[1]))); }catch(e){ return false; }
+  renderShareView(d); return true;
+}
+function closeShareView(){ const el=document.getElementById('shareView'); if(el) el.style.display='none'; try{ history.replaceState(null,'',location.pathname); }catch(e){} }
+function renderShareView(d){
+  const p=d.pet||{}, m=bloodItemsMap();
+  const sp=(SPECIES[p.species]||SPECIES.other);
+  const blood=(d.bloodTests||[]).sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(t=>{
+    const rows=Object.entries(t.values||{}).filter(([k,v])=>v!=='' && v!=null).map(([k,v])=>{ const it=m[k]||{name:k,unit:''}; const st=bloodStatus(v,it.lo,it.hi);
+      return '<tr><td><strong>'+esc(k)+'</strong> <span class="muted" style="font-size:11px">'+esc(it.name||'')+'</span></td><td class="num">'+esc(String(v))+' '+esc(it.unit||'')+'</td><td class="num muted">'+bloodRef(it)+'</td><td>'+bloodBadge(st)+'</td></tr>'; }).join('');
+    return '<div class="card"><h2>🩸 ผลเลือด · '+fmtDate(t.date)+'</h2>'+(t.note?'<p class="muted">📝 '+esc(t.note)+'</p>':'')+'<table class="dtable"><tr><th>ค่า</th><th class="num">ผล</th><th class="num">ปกติ</th><th>สถานะ</th></tr>'+rows+'</table></div>';
+  }).join('');
+  const treats=(d.treatments||[]).map(t=>'<div class="list-item"><div class="meta"><div class="t">'+medIcon(t)+' '+esc(t.name)+'</div><div class="s">'+esc(doseText(t))+' · '+schedSummary(t)+' · '+fmtDate(t.startDate)+'–'+fmtDate(t.endDate)+'</div></div></div>').join('');
+  const recs=(d.records||[]).sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(r=>{const c=REC_CATS[r.category]||{};return '<div class="list-item"><div class="meta"><div class="t">'+(c.emoji||'📄')+' '+esc(r.title||c.label||'')+'</div><div class="s">'+(c.label||'')+' · '+fmtDate(r.date)+(r.note?' · '+esc(r.note):'')+'</div></div></div>';}).join('');
+  const logs=(d.logs||[]).filter(l=>l.weight).sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,10).map(l=>'<div class="list-item"><div class="meta"><div class="t">'+ (l.weight||'-') +' กก.</div><div class="s">'+fmtDate(l.date)+'</div></div></div>').join('');
+  let el=document.getElementById('shareView'); if(!el){ el=document.createElement('div'); el.id='shareView'; document.body.appendChild(el); }
+  el.innerHTML='<div class="sharebar">🔗 กำลังดูข้อมูลที่แชร์ (อ่านอย่างเดียว) <button onclick="closeShareView()">ปิด</button></div>'
+    +'<div class="wrap">'
+    +'<div class="card" style="display:flex;gap:14px;align-items:center"><div class="avatar lg">'+(sp.emoji)+'</div>'
+    +'<div><h2 style="margin:0">'+esc(p.name||'-')+'</h2><div class="muted">'+sp.label+' · '+esc(p.breed||'-')+'</div>'
+    +'<div class="muted">'+calcAge(p.birthdate)+' · '+(p.sex==='m'?'เพศผู้':p.sex==='f'?'เพศเมีย':'-')+' · '+(p.weight?p.weight+' กก.':'-')+'</div></div></div>'
+    +((p.chronic||p.allergies)?('<div class="card">'+(p.chronic?'<div><span class="badge warn">โรคประจำตัว</span> '+esc(p.chronic)+'</div>':'')+(p.allergies?'<div style="margin-top:8px"><span class="badge danger">แพ้ยา</span> '+esc(p.allergies)+'</div>':'')+'</div>'):'')
+    +blood
+    +(treats?'<div class="card"><h2>💊 ยา/การรักษา</h2>'+treats+'</div>':'')
+    +(logs?'<div class="card"><h2>⚖️ น้ำหนัก (ล่าสุด)</h2>'+logs+'</div>':'')
+    +(recs?'<div class="card"><h2>📔 สมุดสุขภาพ</h2>'+recs+'</div>':'')
+    +'<div class="notice">ข้อมูลนี้แชร์แบบอ่านอย่างเดียว · CatCare AI · ไม่ใช่การวินิจฉัย โปรดปรึกษาสัตวแพทย์</div>'
+    +'<button class="btn primary block" onclick="closeShareView()">ปิดหน้าดูข้อมูลที่แชร์</button>'
+    +'</div>';
+  el.style.display='block';
 }
 function copyReport(){
   const t=$('reportText'); t.select();
@@ -1562,4 +1627,5 @@ function loopMap(){
 }
 
 /* ---------- init ---------- */
-(async()=>{ await loadDBInit(); render(); setTimeout(checkDueNotifs, 1500); })();
+(async()=>{ await loadDBInit(); render(); setTimeout(checkDueNotifs, 1500); checkShareLink(); })();
+window.addEventListener('hashchange',()=>{ if(!checkShareLink()) closeShareView(); });
