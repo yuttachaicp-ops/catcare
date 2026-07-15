@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.16.1';
+const APP_VERSION = '1.16.2';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -210,6 +210,7 @@ function fabAction(){
 function render(){
   const p = activePet();
   $('petSwitch').textContent = p ? (SPECIES[p.species]||SPECIES.other).emoji+' '+p.name+' ▾' : 'เพิ่มแมว ＋';
+  renderAcct();
   const fab=$('fab');
   fab.classList.toggle('hidden', currentTab==='assess'||currentTab==='more');
   if(currentTab==='home') renderHome();
@@ -1708,7 +1709,8 @@ async function cloudInit(){
   try{ await sbLoadSdk(); }catch(e){ return; }
   try{ _sb=window.supabase.createClient(url,key); }catch(e){ return; }
   try{ const { data:{ session } } = await _sb.auth.getSession(); _sbUser=session?session.user:null; }catch(e){}
-  _sb.auth.onAuthStateChange((_e,sess)=>{ const was=_sbUser; _sbUser=sess?sess.user:null; if(_sbUser && (!was||was.id!==_sbUser.id)) cloudPull(); if(currentTab==='more'&&moreSub==='backup') moreBody(); });
+  renderAcct();
+  _sb.auth.onAuthStateChange((_e,sess)=>{ const was=_sbUser; _sbUser=sess?sess.user:null; if(_sbUser && (!was||was.id!==_sbUser.id)) cloudPull(); renderAcct(); if(currentTab==='more'&&moreSub==='backup') moreBody(); });
   if(_sbUser) await cloudPull();
   if(currentTab==='more'&&moreSub==='backup') moreBody();
 }
@@ -1738,6 +1740,35 @@ async function cloudPush(silent){
     if(error && !silent) toast('บันทึกขึ้นคลาวด์ไม่สำเร็จ'); }
   catch(e){ if(!silent) toast('บันทึกขึ้นคลาวด์ไม่สำเร็จ'); }
 }
+function acctName(u){
+  const m=u.user_metadata||{};
+  return m.full_name||m.name||u.email||'บัญชี';
+}
+function acctAvatarUrl(u){
+  const m=u.user_metadata||{};
+  return m.avatar_url||m.picture||'';
+}
+function renderAcct(){
+  const el=$('acctChip'); if(!el) return;
+  const {url,key}=sbCfg();
+  if(!_sbUser){
+    el.className='acct-chip off';
+    el.innerHTML='👤';
+    el.title = (url&&key) ? 'ยังไม่ได้เข้าสู่ระบบ — แตะเพื่อล็อกอิน' : 'ตั้งค่าซิงก์คลาวด์';
+    return;
+  }
+  el.className='acct-chip';
+  const av=acctAvatarUrl(_sbUser);
+  const nm=acctName(_sbUser);
+  const inits=(nm.trim()[0]||'👤').toUpperCase();
+  el.innerHTML =
+    (av?`<img src="${esc(av)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'ava',textContent:'${esc(inits)}'}))">`
+       :`<span class="ava">${esc(inits)}</span>`)
+    + `<span class="nm">${esc(nm)}</span><span class="dot"></span>`;
+  el.title = 'เข้าสู่ระบบ: '+(_sbUser.email||nm)+' — แตะเพื่อดู/ออกจากระบบ';
+}
+function goCloud(){ moreTab('backup'); }
+
 function cloudCard(){
   const {url,key}=sbCfg();
   if(!url||!key){
@@ -1763,4 +1794,3 @@ function cloudCard(){
 
 /* ---------- init ---------- */
 (async()=>{ await loadDBInit(); render(); setTimeout(checkDueNotifs, 1500); checkShareLink(); cloudInit(); })();
-window.addEventListener('hashchange',()=>{ if(!checkShareLink()) closeShareView(); });

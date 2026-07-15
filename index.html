@@ -34,8 +34,14 @@ a{color:var(--brand)}
 .app-header .logo{font-size:22px}
 .app-header h1{font-size:17px;margin:0;font-weight:700}
 .app-header .sub{font-size:11px;opacity:.85;margin:0}
-.app-header .pet-switch{margin-left:auto;background:rgba(255,255,255,.2);
-  border:none;color:#fff;padding:7px 12px;border-radius:20px;font-size:13px;font-weight:600;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.app-header .pet-switch{margin-left:8px;background:rgba(255,255,255,.2);
+  border:none;color:#fff;padding:7px 12px;border-radius:20px;font-size:13px;font-weight:600;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.app-header .acct-chip{margin-left:auto;flex-shrink:0;display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.2);
+  border:none;color:#fff;padding:5px 10px 5px 5px;border-radius:22px;font-size:12px;font-weight:600;cursor:pointer;max-width:150px;overflow:hidden}
+.app-header .acct-chip img,.app-header .acct-chip .ava{width:26px;height:26px;border-radius:50%;object-fit:cover;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.app-header .acct-chip .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px}
+.app-header .acct-chip.off{padding:6px;font-size:16px}
+.app-header .acct-chip .dot{width:8px;height:8px;border-radius:50%;background:#51cf66;box-shadow:0 0 0 2px rgba(255,255,255,.5);flex-shrink:0}
 .wrap{max-width:640px;margin:0 auto;padding:16px}
 .page{display:none;animation:fade .25s ease}
 .page.active{display:block}
@@ -140,6 +146,7 @@ canvas{max-width:100%}
     <h1>CatCare AI</h1>
     <p class="sub">ผู้ช่วยดูแลสุขภาพแมวส่วนตัว</p>
   </div>
+  <button class="acct-chip" id="acctChip" onclick="goCloud()" title="บัญชี">👤</button>
   <button class="pet-switch" id="petSwitch" onclick="openPetSwitch()">เลือกแมว ▾</button>
 </div>
 
@@ -155,21 +162,4 @@ canvas{max-width:100%}
 
 <nav class="tabbar">
   <button class="tab on" data-tab="home" onclick="go('home')"><span class="ic">🏠</span>หน้าหลัก</button>
-  <button class="tab" data-tab="book" onclick="go('book')"><span class="ic">📔</span>สมุดสุขภาพ</button>
-  <button class="tab" data-tab="assess" onclick="go('assess')"><span class="ic">🩺</span>ประเมินอาการ</button>
-  <button class="tab" data-tab="dash" onclick="go('dash')"><span class="ic">📊</span>Dashboard</button>
-  <button class="tab" data-tab="more" onclick="go('more')"><span class="ic">⋯</span>เพิ่มเติม</button>
-</nav>
-
-<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
-  <div class="modal" id="modal"></div>
-</div>
-<div class="toast" id="toast"></div>
-
-<script src="symptoms.js?v=23"></script>
-<script src="app.js?v=23"></script>
-<script>
-if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
-</script>
-</body>
-</html>
+  
