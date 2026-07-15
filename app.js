@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.10.0';
+const APP_VERSION = '1.11.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -1119,7 +1119,8 @@ function bloodView(){
     <h2>🩸 ผลเลือด — ${esc(p.name)}</h2>
     <p class="muted">บันทึกผลตรวจเลือดแต่ละครั้ง กดดูเพื่อเทียบช่วงค่าปกติ (ต่ำ/ปกติ/สูง)</p>
     <div class="row"><button class="btn primary" onclick="openBloodForm()">＋ เพิ่มผลเลือด</button>
-      <button class="btn ghost" onclick="openBloodRef()">📖 ความหมายค่า</button></div>
+      <button class="btn ghost" onclick="openBloodRef()">📖 ความหมายค่า</button>
+      <button class="btn ghost" onclick="openBloodImport()">📥 นำเข้าจากโค้ด</button></div>
   </div>
   ${ts.length? ts.map(t=>{ const nc=Object.keys(t.values||{}).length, abn=bloodAbn(t);
      return `<div class="card" onclick="openBloodDetail('${t.id}')" style="cursor:pointer">
@@ -1209,6 +1210,23 @@ function onBloodPhoto(input){
     img.onerror=()=>toast('โหลดรูปไม่ได้'); img.src=e.target.result;
   };
   r.readAsDataURL(f);
+}
+function openBloodImport(){
+  const p=activePet();
+  openModal('📥 นำเข้าผลเลือดจากโค้ด', `
+    <p class="muted">วางโค้ดผลเลือด แล้วกดนำเข้า — จะเพิ่มให้แมวที่กำลังเลือก (<strong>${esc((p||{}).name||'-')}</strong>) โดยไม่ลบข้อมูลเดิม</p>
+    <textarea id="bl_import" style="min-height:130px" placeholder='วางโค้ดที่นี่ เช่น {"date":"2026-07-09","values":{"BUN":"22"}}'></textarea>
+    <button class="btn primary block" style="margin-top:10px" onclick="doBloodImport()">นำเข้า</button>
+  `);
+}
+function doBloodImport(){
+  const p=activePet(); if(!p){ toast('เลือกแมวก่อน'); return; }
+  const raw=(($('bl_import')||{}).value||'').trim(); if(!raw){ toast('วางโค้ดก่อน'); return; }
+  let obj; try{ const m=raw.match(/\{[\s\S]*\}/); obj=JSON.parse(m?m[0]:raw); }catch(e){ toast('โค้ดไม่ถูกต้อง'); return; }
+  if(!obj || typeof obj!=='object' || !obj.values || typeof obj.values!=='object'){ toast('โค้ดไม่มีข้อมูลค่าเลือด'); return; }
+  autoBackup();
+  DB.bloodTests.push({id:uid(),petId:p.id,date:obj.date||todayStr(),note:obj.note||'',values:obj.values});
+  saveDB(); closeModal(); toast('นำเข้าผลเลือดแล้ว ✓'); render();
 }
 function openBloodRef(){
   openModal('📖 ความหมายค่าเลือด', BLOOD_GROUPS.map(g=>`<div style="margin-top:10px"><strong>${g.group}</strong>
