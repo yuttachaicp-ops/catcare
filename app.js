@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.16.0';
+const APP_VERSION = '1.16.1';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -1698,11 +1698,12 @@ function loopMap(){
 let _sb=null, _sbUser=null, _cloudPushT=null;
 const SB_URL='https://qsgeewcjzelzsusvdxsd.supabase.co';
 const SB_KEY='sb_publishable_-AF5XP1z-SpMEwk05utH_Q_YFarQqSu';
-function sbCfg(){ return { url:(DB.settings.sbUrl||SB_URL||'').trim(), key:(DB.settings.sbKey||SB_KEY||'').trim() }; }
+function sbCfg(){ return { url:SB_URL, key:SB_KEY }; }  // ใช้ค่าที่ฝังไว้เสมอ กันค่าเก่าที่ผิดมาทับ
 function sbLoadSdk(){ return new Promise((res,rej)=>{ if(window.supabase&&window.supabase.createClient) return res();
   const sc=document.createElement('script'); sc.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
   sc.onload=()=>res(); sc.onerror=()=>rej(new Error('โหลด SDK ไม่ได้ (ต้องต่อเน็ต)')); document.head.appendChild(sc); }); }
 async function cloudInit(){
+  if(DB.settings.sbUrl && /supabase\.com\/dashboard/.test(DB.settings.sbUrl)){ DB.settings.sbUrl=''; DB.settings.sbKey=''; try{saveLocal();}catch(e){} }
   const {url,key}=sbCfg(); if(!url||!key) return;
   try{ await sbLoadSdk(); }catch(e){ return; }
   try{ _sb=window.supabase.createClient(url,key); }catch(e){ return; }
