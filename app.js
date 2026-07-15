@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.14.0';
+const APP_VERSION = '1.15.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -92,10 +92,11 @@ async function loadDBInit(){
     }
   }catch(e){ console.warn('load fail', e); }
 }
-function saveDB(){
+function saveLocal(){
   if(_useIDB){ idbSet('db', DB).catch(()=>toast('บันทึกข้อมูลไม่สำเร็จ')); }
   else { try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){ toast('พื้นที่จัดเก็บเต็ม'); } }
 }
+function saveDB(){ saveLocal(); try{ cloudPushDebounced(); }catch(e){} }
 /* สำรองอัตโนมัติก่อนการเปลี่ยนแปลงสำคัญ */
 function autoBackup(){
   try{ _autoBackup={ at:Date.now(), data:JSON.parse(JSON.stringify(DB)) };
@@ -1449,7 +1450,7 @@ function checkDueNotifs(){
 function backupView(){
   const bk=_autoBackup;
   const st=DB.settings;
-  return `<div class="card">
+  return cloudCard() + `<div class="card">
     <h2>💾 สำรอง & กู้คืนข้อมูล</h2>
     <p class="muted">ข้อมูลทั้งหมดเก็บในเครื่องของคุณ (ออฟไลน์) แนะนำให้ส่งออกไฟล์สำรองเป็นระยะ</p>
     <button class="btn primary block" onclick="exportData()">⬇️ ส่งออกไฟล์สำรอง (.json)</button>
@@ -1693,6 +1694,70 @@ function loopMap(){
   _map.raf=requestAnimationFrame(loopMap);
 }
 
+/* ---------- Cloud sync (Supabase) — Plan B ---------- */
+let _sb=null, _sbUser=null, _cloudPushT=null;
+function sbCfg(){ return { url:(DB.settings.sbUrl||'').trim(), key:(DB.settings.sbKey||'').trim() }; }
+function sbLoadSdk(){ return new Promise((res,rej)=>{ if(window.supabase&&window.supabase.createClient) return res();
+  const sc=document.createElement('script'); sc.src='https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+  sc.onload=()=>res(); sc.onerror=()=>rej(new Error('โหลด SDK ไม่ได้ (ต้องต่อเน็ต)')); document.head.appendChild(sc); }); }
+async function cloudInit(){
+  const {url,key}=sbCfg(); if(!url||!key) return;
+  try{ await sbLoadSdk(); }catch(e){ return; }
+  try{ _sb=window.supabase.createClient(url,key); }catch(e){ return; }
+  try{ const { data:{ session } } = await _sb.auth.getSession(); _sbUser=session?session.user:null; }catch(e){}
+  _sb.auth.onAuthStateChange((_e,sess)=>{ const was=_sbUser; _sbUser=sess?sess.user:null; if(_sbUser && (!was||was.id!==_sbUser.id)) cloudPull(); if(currentTab==='more'&&moreSub==='backup') moreBody(); });
+  if(_sbUser) await cloudPull();
+  if(currentTab==='more'&&moreSub==='backup') moreBody();
+}
+function saveCloudCfg(){
+  const u=($('sb_url')||{}).value||'', k=($('sb_key')||{}).value||'';
+  DB.settings.sbUrl=u.trim(); DB.settings.sbKey=k.trim(); saveLocal();
+  toast('บันทึกการตั้งค่าคลาวด์แล้ว'); _sb=null; _sbUser=null; cloudInit();
+}
+function clearCloudCfg(){ DB.settings.sbUrl=''; DB.settings.sbKey=''; _sb=null; _sbUser=null; saveLocal(); toast('ล้างการตั้งค่าแล้ว'); moreBody(); }
+async function cloudSignInGoogle(){ if(!_sb){toast('ตั้งค่าคลาวด์ก่อน');return;} try{ await _sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: location.origin+location.pathname } }); }catch(e){ toast('Google ล็อกอินไม่สำเร็จ'); } }
+async function cloudSignInEmail(){ if(!_sb){toast('ตั้งค่าคลาวด์ก่อน');return;} const e=($('sb_email')||{}).value, pw=($('sb_pw')||{}).value; if(!e||!pw){toast('กรอกอีเมลและรหัสผ่าน');return;} const {error}=await _sb.auth.signInWithPassword({email:e.trim(),password:pw}); if(error) toast('เข้าสู่ระบบไม่สำเร็จ: '+error.message); else toast('เข้าสู่ระบบแล้ว'); }
+async function cloudSignUpEmail(){ if(!_sb){toast('ตั้งค่าคลาวด์ก่อน');return;} const e=($('sb_email')||{}).value, pw=($('sb_pw')||{}).value; if(!e||!pw){toast('กรอกอีเมลและรหัสผ่าน');return;} const {error}=await _sb.auth.signUp({email:e.trim(),password:pw}); if(error) toast('สมัครไม่สำเร็จ: '+error.message); else toast('สมัครแล้ว — ถ้าระบบขอยืนยันอีเมล โปรดเช็กกล่องอีเมล'); }
+async function cloudSignOut(){ if(_sb){ try{ await _sb.auth.signOut(); }catch(e){} } _sbUser=null; toast('ออกจากระบบแล้ว'); moreBody(); }
+async function cloudPull(){
+  if(!_sb||!_sbUser) return;
+  try{
+    const { data, error } = await _sb.from('app_state').select('data').eq('user_id',_sbUser.id).maybeSingle();
+    if(error){ toast('ดึงข้อมูลคลาวด์ไม่สำเร็จ: '+error.message); return; }
+    if(data && data.data && data.data.pets){ const cfg=sbCfg(); DB=Object.assign(freshDB(), data.data); DB.settings.sbUrl=cfg.url; DB.settings.sbKey=cfg.key; saveLocal(); render(); toast('ซิงก์ข้อมูลจากคลาวด์แล้ว'); }
+    else { await cloudPush(true); toast('อัปข้อมูลนี้ขึ้นคลาวด์แล้ว'); }
+  }catch(e){ toast('ซิงก์ล้มเหลว'); }
+}
+function cloudPushDebounced(){ if(!_sb||!_sbUser) return; clearTimeout(_cloudPushT); _cloudPushT=setTimeout(()=>cloudPush(), 1500); }
+async function cloudPush(silent){
+  if(!_sb||!_sbUser) return;
+  try{ const { error } = await _sb.from('app_state').upsert({ user_id:_sbUser.id, data:DB, updated_at:new Date().toISOString() });
+    if(error && !silent) toast('บันทึกขึ้นคลาวด์ไม่สำเร็จ'); }
+  catch(e){ if(!silent) toast('บันทึกขึ้นคลาวด์ไม่สำเร็จ'); }
+}
+function cloudCard(){
+  const {url,key}=sbCfg();
+  if(!url||!key){
+    return `<div class="card"><h2>☁️ บัญชี & ซิงก์คลาวด์ (Plan B)</h2>
+      <p class="muted">ล็อกอินเพื่อซิงก์ข้อมูลข้ามเครื่อง/มือถือ ตั้งค่า Supabase ครั้งเดียว (ดูวิธีที่ผมส่งให้)</p>
+      <label>Supabase Project URL</label><input id="sb_url" value="${esc(url)}" placeholder="https://xxxx.supabase.co">
+      <label>anon public key</label><input id="sb_key" value="${esc(key)}" placeholder="eyJhbGciOi...">
+      <button class="btn primary block" style="margin-top:10px" onclick="saveCloudCfg()">บันทึกการตั้งค่าคลาวด์</button>
+      <p class="muted" style="font-size:11.5px;margin-top:6px">⚠️ ใช้ anon public key เท่านั้น (ปลอดภัยเมื่อเปิด RLS) · ห้ามใส่ service_role/secret</p></div>`;
+  }
+  if(!_sbUser){
+    return `<div class="card"><h2>☁️ เข้าสู่ระบบ (ซิงก์คลาวด์)</h2>
+      <button class="btn primary block" onclick="cloudSignInGoogle()">🔵 เข้าสู่ระบบด้วย Google</button>
+      <div class="muted" style="text-align:center;margin:8px 0">— หรือ อีเมล+รหัส —</div>
+      <input id="sb_email" type="email" placeholder="อีเมล"><input id="sb_pw" type="password" placeholder="รหัสผ่าน (อย่างน้อย 6 ตัว)" style="margin-top:8px">
+      <div class="row" style="margin-top:8px"><button class="btn primary" onclick="cloudSignInEmail()">เข้าสู่ระบบ</button><button class="btn ghost" onclick="cloudSignUpEmail()">สมัครใหม่</button></div>
+      <button class="btn ghost block" style="margin-top:10px" onclick="clearCloudCfg()">ล้างการตั้งค่าคลาวด์</button></div>`;
+  }
+  return `<div class="card"><h2>☁️ ซิงก์คลาวด์ (เปิดใช้งาน)</h2>
+    <p class="muted">เข้าสู่ระบบ: <strong>${esc(_sbUser.email||_sbUser.id)}</strong> · ข้อมูลซิงก์อัตโนมัติเมื่อออนไลน์</p>
+    <div class="row"><button class="btn ghost" onclick="cloudPull()">⬇️ ดึงจากคลาวด์</button><button class="btn ghost" onclick="cloudPush()">⬆️ ส่งขึ้นคลาวด์</button><button class="btn danger" onclick="cloudSignOut()">ออกจากระบบ</button></div></div>`;
+}
+
 /* ---------- init ---------- */
-(async()=>{ await loadDBInit(); render(); setTimeout(checkDueNotifs, 1500); checkShareLink(); })();
+(async()=>{ await loadDBInit(); render(); setTimeout(checkDueNotifs, 1500); checkShareLink(); cloudInit(); })();
 window.addEventListener('hashchange',()=>{ if(!checkShareLink()) closeShareView(); });
