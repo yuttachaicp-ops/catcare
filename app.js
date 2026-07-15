@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.13.0';
+const APP_VERSION = '1.14.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -818,6 +818,19 @@ function buildReport(){
     recs.slice(0,15).forEach(r=>L.push(`${fmtDate(r.date)} [${(REC_CATS[r.category]||{}).label}] ${r.title||''}${r.note?' — '+r.note:''}`));
     L.push('');
   }
+  const acts=DB.treatments.filter(t=>t.petId===p.id);
+  if(acts.length){
+    L.push('ยา / การรักษา');
+    acts.forEach(t=>{ const stx=(t.active===false)?' (หยุดแล้ว)':(todayStr()>t.endDate?' (จบคอร์ส)':''); L.push(`- ${t.name} ${doseText(t)} · ${schedSummary(t)} · ${fmtDate(t.startDate)}–${fmtDate(t.endDate)}${stx}`); });
+    L.push('');
+  }
+  const bt=DB.bloodTests.filter(t=>t.petId===p.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
+  if(bt){
+    const bm=bloodItemsMap();
+    L.push('ผลเลือดล่าสุด ('+fmtDate(bt.date)+')'+(bt.note?' — '+bt.note:''));
+    Object.entries(bt.values||{}).forEach(([k,v])=>{ const it=bm[k]||{name:k,unit:''}; const st=bloodStatus(v,it.lo,it.hi); const flag=st==='high'?' [สูง]':st==='low'?' [ต่ำ]':''; L.push(`  ${k} = ${v} ${it.unit||''} (ปกติ ${bloodRef(it)})${flag}`); });
+    L.push('');
+  }
   L.push('────────────────────');
   L.push('หมายเหตุ: รายงานนี้สร้างจากข้อมูลที่เจ้าของบันทึก เพื่อใช้ประกอบการปรึกษาสัตวแพทย์ ไม่ใช่การวินิจฉัยทางการแพทย์');
   return L.join('\n');
@@ -1202,7 +1215,8 @@ function bloodView(){
     <p class="muted">บันทึกผลตรวจเลือดแต่ละครั้ง กดดูเพื่อเทียบช่วงค่าปกติ (ต่ำ/ปกติ/สูง)</p>
     <div class="row"><button class="btn primary" onclick="openBloodForm()">＋ เพิ่มผลเลือด</button>
       <button class="btn ghost" onclick="openBloodRef()">📖 ความหมายค่า</button>
-      <button class="btn ghost" onclick="openBloodImport()">📥 นำเข้าจากโค้ด</button></div>
+      <button class="btn ghost" onclick="openBloodImport()">📥 นำเข้าจากโค้ด</button>
+      <button class="btn ghost" onclick="openBloodTrend()">📈 แนวโน้ม</button></div>
   </div>
   ${ts.length? ts.map(t=>{ const nc=Object.keys(t.values||{}).length, abn=bloodAbn(t);
      return `<div class="card" onclick="openBloodDetail('${t.id}')" style="cursor:pointer">
@@ -1292,6 +1306,59 @@ function onBloodPhoto(input){
     img.onerror=()=>toast('โหลดรูปไม่ได้'); img.src=e.target.result;
   };
   r.readAsDataURL(f);
+}
+function trendKeys(petId){
+  const ts=DB.bloodTests.filter(t=>t.petId===petId); const cnt={};
+  ts.forEach(t=>Object.entries(t.values||{}).forEach(([k,v])=>{ if(!isNaN(parseFloat(v))) cnt[k]=(cnt[k]||0)+1; }));
+  return Object.keys(cnt).filter(k=>cnt[k]>=2);
+}
+let _trendSel=[];
+function openBloodTrend(){
+  const p=activePet(); if(!p) return;
+  const keys=trendKeys(p.id);
+  if(!keys.length){ toast('ต้องมีผลเลือด ≥ 2 ครั้งที่มีค่าเดียวกัน จึงจะดูแนวโน้มได้'); return; }
+  _trendSel=['BUN','CREA'].filter(k=>keys.includes(k)); if(!_trendSel.length) _trendSel=[keys[0]];
+  openModal('📈 แนวโน้มค่าเลือด', `
+    <p class="muted">แตะเลือกค่าที่ต้องการ (มีข้อมูล ≥ 2 ครั้ง) · แถบเขียว = ช่วงปกติ</p>
+    <div id="trendChips">${keys.map(k=>`<span class="chip ${_trendSel.includes(k)?'on':''}" onclick="toggleTrend('${k}')">${k}</span>`).join('')}</div>
+    <div id="trendCharts"></div>
+  `);
+  if(typeof requestAnimationFrame==='function') requestAnimationFrame(renderTrendCharts); else renderTrendCharts();
+}
+function toggleTrend(k){
+  const i=_trendSel.indexOf(k); if(i<0)_trendSel.push(k); else _trendSel.splice(i,1);
+  const p=activePet(), c=document.getElementById('trendChips');
+  if(c) c.innerHTML=trendKeys(p.id).map(x=>`<span class="chip ${_trendSel.includes(x)?'on':''}" onclick="toggleTrend('${x}')">${x}</span>`).join('');
+  renderTrendCharts();
+}
+function renderTrendCharts(){
+  const wrap=document.getElementById('trendCharts'); if(!wrap) return; const m=bloodItemsMap();
+  if(!_trendSel.length){ wrap.innerHTML='<div class="empty">เลือกอย่างน้อย 1 ค่า</div>'; return; }
+  wrap.innerHTML=_trendSel.map((k,i)=>`<div class="card" style="padding:12px"><div style="font-weight:700">${esc(k)} <span class="muted" style="font-size:11px">${esc((m[k]||{}).name||'')} · ปกติ ${bloodRef(m[k]||{})} ${esc((m[k]||{}).unit||'')}</span></div><canvas id="tc${i}" style="width:100%;height:150px"></canvas></div>`).join('');
+  _trendSel.forEach((k,i)=>drawParamChart('tc'+i,k));
+}
+function drawParamChart(cid,key){
+  const c=document.getElementById(cid); if(!c) return; const ctx=c.getContext&&c.getContext('2d'); if(!ctx) return;
+  const p=activePet(), it=bloodItemsMap()[key]||{};
+  const pts=DB.bloodTests.filter(t=>t.petId===p.id && t.values && !isNaN(parseFloat(t.values[key]))).map(t=>({d:t.date,v:parseFloat(t.values[key])})).sort((a,b)=>(a.d||'').localeCompare(b.d||''));
+  if(!pts.length) return;
+  const DPR=Math.min(2,window.devicePixelRatio||1), W=520, H=150;
+  c.width=W*DPR; c.height=H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0);
+  const padL=44,padR=14,padT=14,padB=22;
+  const vals=pts.map(x=>x.v); let mn=Math.min(...vals), mx=Math.max(...vals);
+  if(it.lo!=null) mn=Math.min(mn,it.lo); if(it.hi!=null) mx=Math.max(mx,it.hi);
+  if(mn===mx){ mn-=1; mx+=1; } const ext=(mx-mn)*0.15||1; mn-=ext; mx+=ext; const rng=mx-mn||1;
+  const X=i=>padL+(W-padL-padR)*(pts.length===1?0.5:i/(pts.length-1));
+  const Y=v=>padT+(H-padT-padB)*(1-(v-mn)/rng);
+  ctx.clearRect(0,0,W,H);
+  if(it.lo!=null&&it.hi!=null){ ctx.fillStyle='rgba(18,184,134,.12)'; const yt=Y(it.hi), yb=Y(it.lo); ctx.fillRect(padL, Math.min(yt,yb), W-padL-padR, Math.abs(yb-yt)); }
+  ctx.font='10px sans-serif'; ctx.textAlign='right';
+  [mx,(mx+mn)/2,mn].forEach(val=>{ const y=Y(val); ctx.strokeStyle='#eceef6'; ctx.beginPath(); ctx.moveTo(padL,y); ctx.lineTo(W-padR,y); ctx.stroke(); ctx.fillStyle='#9aa0bd'; ctx.fillText((Math.abs(val)<10?val.toFixed(1):Math.round(val)), padL-5, y+3); });
+  ctx.strokeStyle='#6c5ce7'; ctx.lineWidth=2.5; ctx.beginPath(); pts.forEach((pt,i)=>{ const x=X(i),y=Y(pt.v); i?ctx.lineTo(x,y):ctx.moveTo(x,y); }); ctx.stroke();
+  ctx.textAlign='center';
+  pts.forEach((pt,i)=>{ const x=X(i),y=Y(pt.v); ctx.fillStyle='#6c5ce7'; ctx.beginPath(); ctx.arc(x,y,3.5,0,7); ctx.fill(); const st=bloodStatus(pt.v,it.lo,it.hi); ctx.fillStyle=st==='high'?'#e03131':st==='low'?'#1c7ed6':'#1e2233'; ctx.fillText(String(pt.v), x, y-7); });
+  ctx.fillStyle='#9aa0bd'; ctx.font='9px sans-serif'; ctx.textAlign='left'; ctx.fillText(fmtDate(pts[0].d), padL, H-6);
+  if(pts.length>1){ ctx.textAlign='right'; ctx.fillText(fmtDate(pts[pts.length-1].d), W-padR, H-6); }
 }
 function openBloodImport(){
   const p=activePet();
