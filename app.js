@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.11.0';
+const APP_VERSION = '1.12.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -269,6 +269,8 @@ function renderHome(){
   </div>
 
   ${todaysTreatments(p.id).length?`<div class="card"><h2>💊 ต้องให้วันนี้</h2>${todaysTreatments(p.id).map(t=>homeTreatRow(t)).join('')}</div>`:''}
+
+  ${homeBloodCard(p.id)}
 
   <div class="grid">
     <div class="stat"><div class="v">${recCount}</div><div class="l">บันทึกสุขภาพ</div></div>
@@ -1112,6 +1114,21 @@ function bloodStatus(v,lo,hi){ const nn=parseFloat(v); if(isNaN(nn)) return null
 function bloodBadge(st){ return st==='low'?'<span class="badge info">ต่ำ</span>':st==='high'?'<span class="badge danger">สูง</span>':st==='ok'?'<span class="badge ok">ปกติ</span>':''; }
 function bloodRef(it){ if(it.lo!=null && it.hi!=null) return it.lo+'–'+it.hi; if(it.hi!=null) return '≤ '+it.hi; if(it.lo!=null) return '≥ '+it.lo; return '-'; }
 function bloodAbn(t){ const m=bloodItemsMap(); let c=0; Object.entries(t.values||{}).forEach(([k,v])=>{ const it=m[k]; if(it){ const st=bloodStatus(v,it.lo,it.hi); if(st==='low'||st==='high') c++; } }); return c; }
+function latestBlood(petId){ return DB.bloodTests.filter(t=>t.petId===petId).sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0]; }
+function homeBloodCard(petId){
+  const t=latestBlood(petId); if(!t) return '';
+  const m=bloodItemsMap();
+  const abn=Object.entries(t.values||{}).map(([k,v])=>{ const it=m[k]; if(!it) return null; const st=bloodStatus(v,it.lo,it.hi); return (st==='low'||st==='high')?{k,v,st}:null; }).filter(Boolean);
+  const chips = abn.length
+    ? abn.map(a=>`<span class="chip" style="cursor:default;border-color:${a.st==='high'?'var(--danger)':'var(--info)'};color:${a.st==='high'?'var(--danger)':'var(--info)'}">${esc(a.k)} ${esc(a.v)} ${a.st==='high'?'▲':'▼'}</span>`).join('')
+    : '<span class="badge ok">อยู่ในช่วงปกติทั้งหมด</span>';
+  return `<div class="card" onclick="go('more');setTimeout(()=>moreTab('blood'),50)" style="cursor:pointer">
+    <h2>🩸 ผลเลือดล่าสุด</h2>
+    <div class="muted">${fmtDate(t.date)} · ${Object.keys(t.values||{}).length} ค่า${abn.length?` · <span class="badge warn">นอกช่วง ${abn.length}</span>`:''}</div>
+    <div style="margin-top:8px">${chips}</div>
+    <div class="muted" style="font-size:11.5px;margin-top:8px">แตะเพื่อดูตารางทั้งหมด</div>
+  </div>`;
+}
 function bloodView(){
   const p=activePet(); if(!p) return noPet();
   const ts=DB.bloodTests.filter(t=>t.petId===p.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
