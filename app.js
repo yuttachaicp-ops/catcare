@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.8.0';
+const APP_VERSION = '1.9.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -1146,6 +1146,8 @@ function openBloodForm(id){
   openModal(t?'แก้ไขผลเลือด':'เพิ่มผลเลือด', `
     <div class="grid"><div><label>วันที่ตรวจ</label><input id="bl_date" type="date" value="${t?t.date:todayStr()}"></div>
     <div><label>หมายเหตุ</label><input id="bl_note" value="${t?esc(t.note||''):''}" placeholder="เช่น ตรวจประจำปี"></div></div>
+    <label class="btn ghost block" style="cursor:pointer;margin-top:10px">📷 อ่านค่าจากรูปใบผล (AI)<input type="file" accept="image/*" style="display:none" onchange="onBloodPhoto(this)"></label>
+    <p class="muted" style="font-size:11.5px;margin-top:4px">ถ่าย/อัปโหลดรูปใบผลเลือด แล้ว AI จะช่วยกรอกค่าให้ (ต้องตั้งค่า API key ก่อน) — โปรดตรวจทานความถูกต้องก่อนบันทึกเสมอ</p>
     <p class="muted" style="margin-top:8px">กรอกเฉพาะค่าที่มีในใบผลก็ได้ ไม่ต้องครบทุกช่อง</p>
     ${BLOOD_GROUPS.map(g=>`<div style="margin-top:10px"><strong>${g.group}</strong>
       <table class="dtable"><tr><th>ค่า</th><th style="width:88px">ผล</th><th class="num">ช่วงปกติ</th></tr>
@@ -1165,6 +1167,44 @@ function saveBlood(id){
   saveDB(); closeModal(); toast('บันทึกแล้ว'); render();
 }
 function delBlood(id){ if(!confirm('ลบผลเลือดนี้?'))return; autoBackup(); DB.bloodTests=DB.bloodTests.filter(t=>t.id!==id); saveDB(); closeModal(); toast('ลบแล้ว'); render(); }
+async function readBloodPhoto(dataUrl){
+  const keys=[]; BLOOD_GROUPS.forEach(g=>g.items.forEach(it=>keys.push(it.k)));
+  const prompt='นี่คือรูปใบผลตรวจเลือดของสัตว์ ช่วยอ่านค่าตัวเลขของรายการต่อไปนี้เท่าที่พบในรูป แล้วตอบกลับเป็น JSON อย่างเดียว ห้ามมีข้อความอื่น รูปแบบ {"KEY":"ตัวเลข"} ใช้ KEY จากรายการนี้เท่านั้น: '+keys.join(', ')+' . ค่าที่ไม่พบไม่ต้องใส่ ตัวเลขไม่ต้องมีหน่วย';
+  const st=DB.settings, b64=dataUrl.split(',')[1];
+  if(st.aiProvider==='openai'){
+    const r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+st.apiKey},
+      body:JSON.stringify({model:st.model||'gpt-4o-mini',messages:[{role:'user',content:[{type:'text',text:prompt},{type:'image_url',image_url:{url:dataUrl}}]}]})});
+    const d=await r.json(); if(d.error)throw new Error(d.error.message); return d.choices[0].message.content;
+  } else {
+    const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':st.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:st.model||'claude-3-5-sonnet-20241022',max_tokens:900,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},{type:'text',text:prompt}]}]})});
+    const d=await r.json(); if(d.error)throw new Error(d.error.message); return d.content[0].text;
+  }
+}
+function onBloodPhoto(input){
+  if(!input.files[0]) return;
+  if(!DB.settings.apiKey){ toast('ต้องตั้งค่า AI ก่อน: เพิ่มเติม › ข้อมูล › ตั้งค่า AI'); return; }
+  const f=input.files[0]; toast('กำลังอ่านค่าจากรูป… รอสักครู่');
+  const r=new FileReader();
+  r.onerror=()=>toast('อ่านไฟล์ไม่สำเร็จ');
+  r.onload=e=>{ const img=new Image();
+    img.onload=async()=>{
+      let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height; const mx=1500;
+      if(w>mx){ h=Math.round(h*mx/w); w=mx; }
+      const cv=document.createElement('canvas'); cv.width=w; cv.height=h; const cx=cv.getContext('2d');
+      let durl=e.target.result; if(cx){ cx.drawImage(img,0,0,w,h); try{ durl=cv.toDataURL('image/jpeg',0.85);}catch(_){} }
+      try{
+        const txt=await readBloodPhoto(durl);
+        const m=txt.match(/\{[\s\S]*\}/); if(!m) throw new Error('ไม่พบข้อมูลในรูป');
+        const obj=JSON.parse(m[0]); const map=bloodItemsMap(); let cnt=0;
+        Object.entries(obj).forEach(([k,v])=>{ const key=String(k).toUpperCase(); if(map[key]){ const el=$('bl_'+key); if(el){ el.value=String(v).replace(/[^0-9.\-]/g,''); cnt++; } } });
+        toast(cnt? ('กรอกให้ '+cnt+' ค่า ✓ ตรวจทานก่อนบันทึก') : 'อ่านค่าไม่ได้ ลองถ่ายให้ชัด/ตรงขึ้น');
+      }catch(err){ toast('อ่านรูปไม่สำเร็จ: '+err.message); }
+    };
+    img.onerror=()=>toast('โหลดรูปไม่ได้'); img.src=e.target.result;
+  };
+  r.readAsDataURL(f);
+}
 function openBloodRef(){
   openModal('📖 ความหมายค่าเลือด', BLOOD_GROUPS.map(g=>`<div style="margin-top:10px"><strong>${g.group}</strong>
     <table class="dtable"><tr><th>ย่อ</th><th>ความหมาย</th><th class="num">ช่วงปกติ</th></tr>
