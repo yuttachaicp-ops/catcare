@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.9.0';
+const APP_VERSION = '1.10.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -30,6 +30,10 @@ const BLOOD_GROUPS=[
     {k:'PLT', name:'เกล็ดเลือด (การแข็งตัว)', unit:'10³/µL', lo:175, hi:500},
     {k:'NEU', name:'นิวโทรฟิล (สู้แบคทีเรีย)', unit:'10³/µL', lo:2.5, hi:12.5},
     {k:'LYM', name:'ลิมโฟไซต์', unit:'10³/µL', lo:1.5, hi:7},
+    {k:'MCV', name:'ปริมาตรเฉลี่ยเม็ดเลือดแดง', unit:'fl', lo:39, hi:55},
+    {k:'MCH', name:'ฮีโมโกลบินเฉลี่ยต่อเม็ด', unit:'pg', lo:13, hi:17},
+    {k:'MCHC', name:'ความเข้มข้นฮีโมโกลบินเฉลี่ย', unit:'g/dL', lo:30, hi:36},
+    {k:'RDW', name:'การกระจายขนาดเม็ดเลือดแดง', unit:'%', lo:14, hi:18},
   ]},
   {group:'ไต & เกลือแร่', items:[
     {k:'BUN', name:'ยูเรียไนโตรเจน (การทำงานของไต)', unit:'mg/dL', lo:16, hi:36},
@@ -48,6 +52,7 @@ const BLOOD_GROUPS=[
     {k:'TP', name:'โปรตีนรวม', unit:'g/dL', lo:5.7, hi:8.9},
     {k:'ALB', name:'อัลบูมิน', unit:'g/dL', lo:2.3, hi:3.9},
     {k:'GLOB', name:'โกลบูลิน', unit:'g/dL', lo:2.8, hi:5.1},
+    {k:'AG', name:'สัดส่วนอัลบูมิน:โกลบูลิน (A:G)', unit:'', lo:0.4, hi:1.3},
     {k:'TBIL', name:'บิลิรูบินรวม (ดีซ่าน)', unit:'mg/dL', lo:0, hi:0.4},
     {k:'GLU', name:'น้ำตาลในเลือด', unit:'mg/dL', lo:74, hi:159},
     {k:'T4', name:'ไทรอยด์ฮอร์โมน', unit:'µg/dL', lo:0.8, hi:4.0},
