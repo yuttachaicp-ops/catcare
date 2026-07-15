@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.7.0';
+const APP_VERSION = '1.8.0';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -20,10 +20,44 @@ const REC_CATS = {
   doc:      {label:'เอกสาร', emoji:'📄'},
 };
 
+/* ค่าอ้างอิงเลือดแมว (ค่าทั่วไป — อาจต่างตามแล็บ) */
+const BLOOD_GROUPS=[
+  {group:'เม็ดเลือด (CBC)', items:[
+    {k:'HCT', name:'ความเข้มข้นเม็ดเลือดแดง', unit:'%', lo:30, hi:45},
+    {k:'HGB', name:'ฮีโมโกลบิน (พาออกซิเจน)', unit:'g/dL', lo:8, hi:15},
+    {k:'RBC', name:'จำนวนเม็ดเลือดแดง', unit:'10⁶/µL', lo:5, hi:10},
+    {k:'WBC', name:'เม็ดเลือดขาว (ภูมิ/ติดเชื้อ)', unit:'10³/µL', lo:5.5, hi:19.5},
+    {k:'PLT', name:'เกล็ดเลือด (การแข็งตัว)', unit:'10³/µL', lo:175, hi:500},
+    {k:'NEU', name:'นิวโทรฟิล (สู้แบคทีเรีย)', unit:'10³/µL', lo:2.5, hi:12.5},
+    {k:'LYM', name:'ลิมโฟไซต์', unit:'10³/µL', lo:1.5, hi:7},
+  ]},
+  {group:'ไต & เกลือแร่', items:[
+    {k:'BUN', name:'ยูเรียไนโตรเจน (การทำงานของไต)', unit:'mg/dL', lo:16, hi:36},
+    {k:'CREA', name:'ครีเอตินิน (การทำงานของไต)', unit:'mg/dL', lo:0.8, hi:2.4},
+    {k:'SDMA', name:'ตัวบ่งชี้ไตระยะแรก', unit:'µg/dL', lo:0, hi:14},
+    {k:'PHOS', name:'ฟอสฟอรัส', unit:'mg/dL', lo:2.4, hi:8.2},
+    {k:'CA', name:'แคลเซียม', unit:'mg/dL', lo:8.0, hi:11.8},
+    {k:'NA', name:'โซเดียม', unit:'mmol/L', lo:147, hi:162},
+    {k:'K', name:'โพแทสเซียม', unit:'mmol/L', lo:3.5, hi:5.8},
+    {k:'CL', name:'คลอไรด์', unit:'mmol/L', lo:112, hi:129},
+  ]},
+  {group:'ตับ & โปรตีน & อื่น ๆ', items:[
+    {k:'ALT', name:'เอนไซม์ตับ', unit:'U/L', lo:10, hi:100},
+    {k:'ALP', name:'เอนไซม์ตับ/ทางเดินน้ำดี', unit:'U/L', lo:0, hi:62},
+    {k:'AST', name:'เอนไซม์ตับ/กล้ามเนื้อ', unit:'U/L', lo:10, hi:50},
+    {k:'TP', name:'โปรตีนรวม', unit:'g/dL', lo:5.7, hi:8.9},
+    {k:'ALB', name:'อัลบูมิน', unit:'g/dL', lo:2.3, hi:3.9},
+    {k:'GLOB', name:'โกลบูลิน', unit:'g/dL', lo:2.8, hi:5.1},
+    {k:'TBIL', name:'บิลิรูบินรวม (ดีซ่าน)', unit:'mg/dL', lo:0, hi:0.4},
+    {k:'GLU', name:'น้ำตาลในเลือด', unit:'mg/dL', lo:74, hi:159},
+    {k:'T4', name:'ไทรอยด์ฮอร์โมน', unit:'µg/dL', lo:0.8, hi:4.0},
+  ]},
+];
+
 /* ---------- Store ---------- */
 function freshDB(){
   return { v:1, activePetId:null, pets:[], records:[], logs:[], assessments:[],
-    reminders:[], treatments:[], chats:[], settings:{aiProvider:'claude', apiKey:'', model:''} };
+    reminders:[], treatments:[], bloodTests:[], chats:[], settings:{aiProvider:'claude', apiKey:'', model:''} };
 }
 /* IndexedDB wrapper (เก็บได้มากกว่า localStorage + กันพื้นที่เต็ม) */
 const IDB_NAME='catcare_db', IDB_STORE='kv';
@@ -374,6 +408,7 @@ function deletePet(id){
   DB.assessments=DB.assessments.filter(a=>a.petId!==id);
   DB.reminders=DB.reminders.filter(r=>r.petId!==id);
   DB.treatments=DB.treatments.filter(t=>t.petId!==id);
+  DB.bloodTests=DB.bloodTests.filter(t=>t.petId!==id);
   if(DB.activePetId===id) DB.activePetId=DB.pets[0]?DB.pets[0].id:null;
   saveDB(); closeModal(); toast('ลบแล้ว'); render();
 }
@@ -675,6 +710,7 @@ function renderMore(){
   <div class="seg">
     <button class="${moreSub==='guide'?'on':''}" onclick="moreTab('guide')">📖 วิธีใช้</button>
     <button class="${moreSub==='meds'?'on':''}" onclick="moreTab('meds')">💊 ยา/รักษา</button>
+    <button class="${moreSub==='blood'?'on':''}" onclick="moreTab('blood')">🩸 ผลเลือด</button>
     <button class="${moreSub==='report'?'on':''}" onclick="moreTab('report')">📋 รายงาน</button>
     <button class="${moreSub==='ai'?'on':''}" onclick="moreTab('ai')">🤖 AI</button>
     <button class="${moreSub==='image'?'on':''}" onclick="moreTab('image')">📷 วิเคราะห์รูป</button>
@@ -689,6 +725,7 @@ function moreBody(){
   const b=$('moreBody'); if(!b)return;
   if(moreSub==='guide') b.innerHTML=guideView();
   else if(moreSub==='meds') b.innerHTML=medsView();
+  else if(moreSub==='blood') b.innerHTML=bloodView();
   else if(moreSub==='report') b.innerHTML=reportView();
   else if(moreSub==='ai') b.innerHTML=aiView();
   else if(moreSub==='image') b.innerHTML=imageView();
@@ -707,6 +744,7 @@ function guideView(){
     {ic:'🔔',t:'การเตือน (วัคซีน/ยา/ตรวจสุขภาพ)',st:'ok',how:['เพิ่มเติม → "เตือน" กด "เปิดการแจ้งเตือนบนอุปกรณ์"','เพิ่มการเตือนเองได้ หรือมาจากช่อง "เตือนครั้งถัดไป" ในสมุดสุขภาพ']},
     {ic:'💾',t:'สำรอง & กู้คืนข้อมูล',st:'ok',how:['เพิ่มเติม → "ข้อมูล"','กด "ส่งออกไฟล์สำรอง" เก็บไฟล์ไว้เป็นระยะ','เปลี่ยนเครื่องแล้วใช้ "กู้คืนจากไฟล์" (ระบบสำรองอัตโนมัติก่อนเปลี่ยนแปลงทุกครั้ง)']},
     {ic:'💊',t:'ตารางยา / การรักษา',st:'ok',how:['เพิ่มเติม → "ยา/รักษา" กด "เพิ่มยา/การรักษา"','ตั้งชื่อ ปริมาณ และรูปแบบ: ทุกวันจนครบกำหนด / ทุก ๆ N วัน / เฉพาะวันในสัปดาห์','หน้าหลักจะมีการ์ด "ต้องให้วันนี้" ให้ติ๊กเมื่อให้ยา/น้ำเกลือแล้ว']},
+    {ic:'🩸',t:'ผลเลือด (ตาราง + ค่าอ้างอิง)',st:'ok',how:['เพิ่มเติม → "ผลเลือด" กด "เพิ่มผลเลือด"','กรอกค่าที่มีในใบผล ระบบจะเทียบช่วงปกติให้ (ต่ำ/ปกติ/สูง)','กดดูผลย้อนหลัง แก้ไข/อัปเดตได้ · กด "ความหมายค่า" เพื่อดูว่าอักษรย่อแต่ละตัวคืออะไร']},
     {ic:'🐾',t:'รองรับสัตว์ชนิดอื่น',st:'ok',how:['ตอนเพิ่มโปรไฟล์ เลือก "ชนิดสัตว์" ได้ (แมว/สุนัข/กระต่าย/นก/อื่น ๆ)']},
     {ic:'🤖',t:'ผู้ช่วย AI ตอบคำถาม',st:'warn',how:['ใช้ได้แบบพื้นฐานออฟไลน์ทันที','ปลดล็อกเต็มรูปแบบ: เพิ่มเติม → ข้อมูล → "ตั้งค่า AI" ใส่ API key (Claude หรือ OpenAI)','จากนั้นถามคำถามสุขภาพแมวได้ที่ เพิ่มเติม → "AI"']},
     {ic:'📷',t:'วิเคราะห์รูป (ตา/หู/ผิวหนัง/แผล)',st:'warn',how:['ต้องใส่ API key ที่รองรับรูปภาพก่อน (ตั้งค่า AI)','เพิ่มเติม → "วิเคราะห์รูป" เลือกบริเวณ → อัปโหลดรูป → กดวิเคราะห์']},
@@ -1059,6 +1097,79 @@ function openTreatmentDetail(id){
       return `<div class="list-item"><div class="meta"><div class="t">${fmtDate(d)} ${done?'<span class="badge ok">ให้แล้ว</span>':(d<todayStr()?'<span class="badge danger">ยังไม่ได้ให้</span>':'')}</div></div><div>${dosePills(t,d)}</div></div>`;
     }).join(''):'<div class="empty">ไม่มีวันในตาราง</div>'}
   `);
+}
+
+/* =========================================================
+   BLOOD TESTS (ผลเลือด)
+   ========================================================= */
+function bloodItemsMap(){ const m={}; BLOOD_GROUPS.forEach(g=>g.items.forEach(it=>m[it.k]=it)); return m; }
+function bloodStatus(v,lo,hi){ const nn=parseFloat(v); if(isNaN(nn)) return null; if(lo!=null && nn<lo) return 'low'; if(hi!=null && nn>hi) return 'high'; return 'ok'; }
+function bloodBadge(st){ return st==='low'?'<span class="badge info">ต่ำ</span>':st==='high'?'<span class="badge danger">สูง</span>':st==='ok'?'<span class="badge ok">ปกติ</span>':''; }
+function bloodRef(it){ if(it.lo!=null && it.hi!=null) return it.lo+'–'+it.hi; if(it.hi!=null) return '≤ '+it.hi; if(it.lo!=null) return '≥ '+it.lo; return '-'; }
+function bloodAbn(t){ const m=bloodItemsMap(); let c=0; Object.entries(t.values||{}).forEach(([k,v])=>{ const it=m[k]; if(it){ const st=bloodStatus(v,it.lo,it.hi); if(st==='low'||st==='high') c++; } }); return c; }
+function bloodView(){
+  const p=activePet(); if(!p) return noPet();
+  const ts=DB.bloodTests.filter(t=>t.petId===p.id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  return `<div class="card">
+    <h2>🩸 ผลเลือด — ${esc(p.name)}</h2>
+    <p class="muted">บันทึกผลตรวจเลือดแต่ละครั้ง กดดูเพื่อเทียบช่วงค่าปกติ (ต่ำ/ปกติ/สูง)</p>
+    <div class="row"><button class="btn primary" onclick="openBloodForm()">＋ เพิ่มผลเลือด</button>
+      <button class="btn ghost" onclick="openBloodRef()">📖 ความหมายค่า</button></div>
+  </div>
+  ${ts.length? ts.map(t=>{ const nc=Object.keys(t.values||{}).length, abn=bloodAbn(t);
+     return `<div class="card" onclick="openBloodDetail('${t.id}')" style="cursor:pointer">
+       <div style="display:flex;align-items:center;gap:10px">
+         <div class="avatar" style="width:42px;height:42px;font-size:20px">🩸</div>
+         <div style="flex:1;min-width:0"><div style="font-weight:700">ผลเลือด · ${fmtDate(t.date)}</div>
+         <div class="s">${nc} ค่า · ${abn?('<span class="badge warn">นอกช่วง '+abn+'</span>'):'<span class="badge ok">อยู่ในช่วงปกติ</span>'}</div>
+         ${t.note?`<div class="s muted">${esc(t.note)}</div>`:''}</div>
+         <div style="color:var(--sub)">›</div></div></div>`;
+  }).join('') : '<div class="card"><div class="empty"><span class="em">🩸</span>ยังไม่มีผลเลือด<br><small>กด "เพิ่มผลเลือด"</small></div></div>'}`;
+}
+function openBloodDetail(id){
+  const t=DB.bloodTests.find(x=>x.id===id); if(!t)return; const m=bloodItemsMap();
+  const rows=Object.entries(t.values||{}).filter(([k,v])=>v!=='' && v!=null).map(([k,v])=>{
+    const it=m[k]||{name:k,unit:''}; const st=bloodStatus(v,it.lo,it.hi);
+    return `<tr><td><strong>${esc(k)}</strong><br><span class="muted" style="font-size:11px">${esc(it.name||'')}</span></td>
+      <td class="num">${esc(String(v))} ${esc(it.unit||'')}</td><td class="num muted">${bloodRef(it)}</td><td>${bloodBadge(st)}</td></tr>`;
+  }).join('');
+  openModal('ผลเลือด · '+fmtDate(t.date), `
+    ${t.note?`<p class="muted">📝 ${esc(t.note)}</p>`:''}
+    ${rows?`<table class="dtable"><tr><th>ค่า</th><th class="num">ผล</th><th class="num">ช่วงปกติ</th><th>สถานะ</th></tr>${rows}</table>`:'<div class="empty">ยังไม่มีค่าที่กรอก</div>'}
+    <div class="notice" style="margin-top:12px">⚠️ ช่วงค่าปกติเป็นค่าอ้างอิงทั่วไปสำหรับแมวโต อาจต่างกันตามแล็บ/อายุ ใช้ช่วงอ้างอิงในใบผลจริงและคำวินิจฉัยของสัตวแพทย์เป็นหลัก</div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn primary" onclick="openBloodForm('${t.id}')">แก้ไข / อัปเดต</button>
+      <button class="btn danger" onclick="delBlood('${t.id}')">ลบ</button></div>`);
+}
+function openBloodForm(id){
+  const t=id?DB.bloodTests.find(x=>x.id===id):null; const v=(t&&t.values)||{};
+  openModal(t?'แก้ไขผลเลือด':'เพิ่มผลเลือด', `
+    <div class="grid"><div><label>วันที่ตรวจ</label><input id="bl_date" type="date" value="${t?t.date:todayStr()}"></div>
+    <div><label>หมายเหตุ</label><input id="bl_note" value="${t?esc(t.note||''):''}" placeholder="เช่น ตรวจประจำปี"></div></div>
+    <p class="muted" style="margin-top:8px">กรอกเฉพาะค่าที่มีในใบผลก็ได้ ไม่ต้องครบทุกช่อง</p>
+    ${BLOOD_GROUPS.map(g=>`<div style="margin-top:10px"><strong>${g.group}</strong>
+      <table class="dtable"><tr><th>ค่า</th><th style="width:88px">ผล</th><th class="num">ช่วงปกติ</th></tr>
+      ${g.items.map(it=>`<tr><td><strong>${it.k}</strong> <span class="muted" style="font-size:11px">${esc(it.name)}</span></td>
+        <td><input id="bl_${it.k}" inputmode="decimal" value="${v[it.k]!=null?esc(String(v[it.k])):''}" style="padding:6px 8px"></td>
+        <td class="num muted">${bloodRef(it)}<br>${esc(it.unit||'')}</td></tr>`).join('')}</table></div>`).join('')}
+    <button class="btn primary block" style="margin-top:14px" onclick="saveBlood('${id||''}')">บันทึก</button>
+    ${t?`<button class="btn danger block" style="margin-top:8px" onclick="delBlood('${t.id}')">ลบ</button>`:''}`);
+}
+function saveBlood(id){
+  const p=activePet(); autoBackup();
+  const values={};
+  BLOOD_GROUPS.forEach(g=>g.items.forEach(it=>{ const el=$('bl_'+it.k); if(el && el.value.trim()!=='') values[it.k]=el.value.trim(); }));
+  const data={petId:p.id,date:$('bl_date').value||todayStr(),note:$('bl_note').value.trim(),values};
+  if(id){ Object.assign(DB.bloodTests.find(x=>x.id===id),data); }
+  else DB.bloodTests.push(Object.assign({id:uid()},data));
+  saveDB(); closeModal(); toast('บันทึกแล้ว'); render();
+}
+function delBlood(id){ if(!confirm('ลบผลเลือดนี้?'))return; autoBackup(); DB.bloodTests=DB.bloodTests.filter(t=>t.id!==id); saveDB(); closeModal(); toast('ลบแล้ว'); render(); }
+function openBloodRef(){
+  openModal('📖 ความหมายค่าเลือด', BLOOD_GROUPS.map(g=>`<div style="margin-top:10px"><strong>${g.group}</strong>
+    <table class="dtable"><tr><th>ย่อ</th><th>ความหมาย</th><th class="num">ช่วงปกติ</th></tr>
+    ${g.items.map(it=>`<tr><td><strong>${it.k}</strong></td><td>${esc(it.name)}</td><td class="num muted">${bloodRef(it)} ${esc(it.unit||'')}</td></tr>`).join('')}</table></div>`).join('')
+    + '<div class="notice" style="margin-top:12px">⚠️ ค่าอ้างอิงทั่วไปสำหรับแมวโต อาจต่างกันตามแล็บ อายุ และสภาพร่างกาย ใช้ใบผลจริงและคำแนะนำสัตวแพทย์เป็นหลัก</div>');
 }
 
 /* ---------- Notifications ---------- */

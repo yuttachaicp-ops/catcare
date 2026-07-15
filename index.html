@@ -123,6 +123,11 @@ canvas{max-width:100%}
 .updatebar.on{display:flex}
 .updatebar button{background:#fff;color:#0b7a54;border:none;border-radius:8px;padding:6px 12px;font-weight:700;font-family:inherit;cursor:pointer}
 #mapCanvas{width:100%;height:180px;display:block;image-rendering:pixelated;image-rendering:crisp-edges;background:#a7d08c;cursor:pointer}
+.dtable{width:100%;border-collapse:collapse;font-size:13px}
+.dtable th,.dtable td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+.dtable th{color:var(--sub);font-size:11px;font-weight:700}
+.dtable td.num,.dtable th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.dtable input{padding:6px 8px;font-size:14px}
 </style>
 </head>
 <body>
@@ -158,8 +163,8 @@ canvas{max-width:100%}
 </div>
 <div class="toast" id="toast"></div>
 
-<script src="symptoms.js?v=13"></script>
-<script src="app.js?v=13"></script>
+<script src="symptoms.js?v=14"></script>
+<script src="app.js?v=14"></script>
 <script>
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
 </script>
