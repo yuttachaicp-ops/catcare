@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.16.3';
+const APP_VERSION = '1.16.4';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -209,7 +209,7 @@ function fabAction(){
 /* ---------- Render dispatcher ---------- */
 function render(){
   const p = activePet();
-  $('petSwitch').textContent = p ? (SPECIES[p.species]||SPECIES.other).emoji+' '+p.name+' ▾' : 'เพิ่มแมว ＋';
+  const _ps=$('petSwitch'); if(_ps) _ps.textContent = p ? (SPECIES[p.species]||SPECIES.other).emoji+' '+p.name+' ▾' : 'เพิ่มแมว ＋';
   renderAcct();
   const fab=$('fab');
   fab.classList.toggle('hidden', currentTab==='assess'||currentTab==='more');
@@ -242,7 +242,14 @@ function renderHome(){
   const lastLog = DB.logs.filter(l=>l.petId===p.id).sort((a,b)=>b.date.localeCompare(a.date))[0];
   const recCount = DB.records.filter(r=>r.petId===p.id).length;
 
+  const petPicker = `<div class="pet-picker">
+    ${DB.pets.map(x=>`<div class="pet-pick ${x.id===DB.activePetId?'on':''}" onclick="switchPet('${x.id}')">
+        ${x.photo?`<img class="pa" src="${x.photo}" alt="">`:`<div class="pa">${(SPECIES[x.species]||SPECIES.other).emoji}</div>`}
+        <div class="pn">${esc(x.name)}</div></div>`).join('')}
+    <div class="pet-pick add" onclick="openPetForm()"><div class="plus">＋</div><div class="pn">เพิ่มแมว</div></div>
+  </div>`;
   el.innerHTML = `
+  ${petPicker}
   <div class="card" style="display:flex;gap:14px;align-items:center">
     ${petAvatar(p,true)}
     <div style="flex:1;min-width:0">
