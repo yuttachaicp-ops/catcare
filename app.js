@@ -6,7 +6,7 @@
 /* ---------- ค่าคงที่ ---------- */
 const DB_KEY = 'catcare_db_v1';
 const BACKUP_KEY = 'catcare_autobackup_v1';
-const APP_VERSION = '1.16.2';
+const APP_VERSION = '1.16.3';
 
 const SPECIES = { cat:{label:'แมว', emoji:'🐱'}, dog:{label:'สุนัข', emoji:'🐶'},
   rabbit:{label:'กระต่าย', emoji:'🐰'}, bird:{label:'นก', emoji:'🐦'}, other:{label:'อื่น ๆ', emoji:'🐾'} };
@@ -1696,7 +1696,7 @@ function loopMap(){
 }
 
 /* ---------- Cloud sync (Supabase) — Plan B ---------- */
-let _sb=null, _sbUser=null, _cloudPushT=null;
+let _sb=null, _sbUser=null, _cloudPushT=null, _lastSync=null;
 const SB_URL='https://qsgeewcjzelzsusvdxsd.supabase.co';
 const SB_KEY='sb_publishable_-AF5XP1z-SpMEwk05utH_Q_YFarQqSu';
 function sbCfg(){ return { url:SB_URL, key:SB_KEY }; }  // ใช้ค่าที่ฝังไว้เสมอ กันค่าเก่าที่ผิดมาทับ
@@ -1710,7 +1710,7 @@ async function cloudInit(){
   try{ _sb=window.supabase.createClient(url,key); }catch(e){ return; }
   try{ const { data:{ session } } = await _sb.auth.getSession(); _sbUser=session?session.user:null; }catch(e){}
   renderAcct();
-  _sb.auth.onAuthStateChange((_e,sess)=>{ const was=_sbUser; _sbUser=sess?sess.user:null; if(_sbUser && (!was||was.id!==_sbUser.id)) cloudPull(); renderAcct(); if(currentTab==='more'&&moreSub==='backup') moreBody(); });
+  _sb.auth.onAuthStateChange((_e,sess)=>{ const was=_sbUser; _sbUser=sess?sess.user:null; if(_sbUser && (!was||was.id!==_sbUser.id)) cloudPull(); renderAcct(); if(typeof renderAcctPage==='function')renderAcctPage(); if(currentTab==='more'&&moreSub==='backup') moreBody(); });
   if(_sbUser) await cloudPull();
   if(currentTab==='more'&&moreSub==='backup') moreBody();
 }
@@ -1723,21 +1723,22 @@ function clearCloudCfg(){ DB.settings.sbUrl=''; DB.settings.sbKey=''; _sb=null; 
 async function cloudSignInGoogle(){ if(!_sb){toast('ตั้งค่าคลาวด์ก่อน');return;} try{ await _sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: location.origin+location.pathname } }); }catch(e){ toast('Google ล็อกอินไม่สำเร็จ'); } }
 async function cloudSignInEmail(){ if(!_sb){toast('ตั้งค่าคลาวด์ก่อน');return;} const e=($('sb_email')||{}).value, pw=($('sb_pw')||{}).value; if(!e||!pw){toast('กรอกอีเมลและรหัสผ่าน');return;} const {error}=await _sb.auth.signInWithPassword({email:e.trim(),password:pw}); if(error) toast('เข้าสู่ระบบไม่สำเร็จ: '+error.message); else toast('เข้าสู่ระบบแล้ว'); }
 async function cloudSignUpEmail(){ if(!_sb){toast('ตั้งค่าคลาวด์ก่อน');return;} const e=($('sb_email')||{}).value, pw=($('sb_pw')||{}).value; if(!e||!pw){toast('กรอกอีเมลและรหัสผ่าน');return;} const {error}=await _sb.auth.signUp({email:e.trim(),password:pw}); if(error) toast('สมัครไม่สำเร็จ: '+error.message); else toast('สมัครแล้ว — ถ้าระบบขอยืนยันอีเมล โปรดเช็กกล่องอีเมล'); }
-async function cloudSignOut(){ if(_sb){ try{ await _sb.auth.signOut(); }catch(e){} } _sbUser=null; toast('ออกจากระบบแล้ว'); moreBody(); }
+async function cloudSignOut(){ if(_sb){ try{ await _sb.auth.signOut(); }catch(e){} } _sbUser=null; toast('ออกจากระบบแล้ว'); renderAcct(); if(typeof renderAcctPage==='function')renderAcctPage(); if(currentTab==='more'&&moreSub==='backup')moreBody(); }
 async function cloudPull(){
   if(!_sb||!_sbUser) return;
   try{
     const { data, error } = await _sb.from('app_state').select('data').eq('user_id',_sbUser.id).maybeSingle();
     if(error){ toast('ดึงข้อมูลคลาวด์ไม่สำเร็จ: '+error.message); return; }
-    if(data && data.data && data.data.pets){ const cfg=sbCfg(); DB=Object.assign(freshDB(), data.data); DB.settings.sbUrl=cfg.url; DB.settings.sbKey=cfg.key; saveLocal(); render(); toast('ซิงก์ข้อมูลจากคลาวด์แล้ว'); }
-    else { await cloudPush(true); toast('อัปข้อมูลนี้ขึ้นคลาวด์แล้ว'); }
+    if(data && data.data && data.data.pets){ const cfg=sbCfg(); DB=Object.assign(freshDB(), data.data); DB.settings.sbUrl=cfg.url; DB.settings.sbKey=cfg.key; saveLocal(); _lastSync=new Date().toISOString(); render(); toast('ซิงก์ข้อมูลจากคลาวด์แล้ว'); if(typeof renderAcctPage==='function')renderAcctPage(); }
+    else { await cloudPush(true); toast('อัปข้อมูลนี้ขึ้นคลาวด์แล้ว'); if(typeof renderAcctPage==='function')renderAcctPage(); }
   }catch(e){ toast('ซิงก์ล้มเหลว'); }
 }
 function cloudPushDebounced(){ if(!_sb||!_sbUser) return; clearTimeout(_cloudPushT); _cloudPushT=setTimeout(()=>cloudPush(), 1500); }
 async function cloudPush(silent){
   if(!_sb||!_sbUser) return;
   try{ const { error } = await _sb.from('app_state').upsert({ user_id:_sbUser.id, data:DB, updated_at:new Date().toISOString() });
-    if(error && !silent) toast('บันทึกขึ้นคลาวด์ไม่สำเร็จ'); }
+    if(error){ if(!silent) toast('บันทึกขึ้นคลาวด์ไม่สำเร็จ'); }
+    else { _lastSync=new Date().toISOString(); if(!silent) toast('ส่งขึ้นคลาวด์แล้ว'); if(typeof renderAcctPage==='function')renderAcctPage(); } }
   catch(e){ if(!silent) toast('บันทึกขึ้นคลาวด์ไม่สำเร็จ'); }
 }
 function acctName(u){
@@ -1767,7 +1768,40 @@ function renderAcct(){
     + `<span class="nm">${esc(nm)}</span><span class="dot"></span>`;
   el.title = 'เข้าสู่ระบบ: '+(_sbUser.email||nm)+' — แตะเพื่อดู/ออกจากระบบ';
 }
-function goCloud(){ moreTab('backup'); }
+function goCloud(){ openAcctPage(); }
+function fmtSyncTime(iso){ if(!iso) return 'ยังไม่ได้ซิงก์รอบนี้'; try{ return new Date(iso).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}); }catch(e){ return '-'; } }
+function openAcctPage(){ let el=document.getElementById('acctPage'); if(!el){ el=document.createElement('div'); el.id='acctPage'; document.body.appendChild(el); } el.style.display='block'; renderAcctPage(); }
+function closeAcctPage(){ const el=document.getElementById('acctPage'); if(el) el.style.display='none'; }
+function renderAcctPage(){
+  const el=document.getElementById('acctPage'); if(!el||el.style.display==='none') return;
+  const {url,key}=sbCfg(); let body;
+  if(!url||!key){
+    body=`<div class="card"><h2>☁️ ตั้งค่าซิงก์คลาวด์</h2>
+      <p class="muted">ยังไม่ได้ตั้งค่า Supabase</p>
+      <label>Supabase Project URL</label><input id="sb_url" value="${esc(url)}" placeholder="https://xxxx.supabase.co">
+      <label>anon public key</label><input id="sb_key" value="${esc(key)}" placeholder="eyJhbGciOi...">
+      <button class="btn primary block" style="margin-top:10px" onclick="saveCloudCfg()">บันทึกการตั้งค่า</button></div>`;
+  } else if(!_sbUser){
+    body=`<div class="acct-hero"><div class="acct-ava-lg">👤</div><h2 style="margin:8px 0 2px">ยังไม่ได้เข้าสู่ระบบ</h2><p class="muted" style="margin:0">เข้าสู่ระบบเพื่อซิงก์ข้อมูลข้ามเครื่อง/มือถือ</p></div>
+      <div class="card">
+        <button class="btn primary block" onclick="cloudSignInGoogle()">🔵 เข้าสู่ระบบด้วย Google</button>
+        <div class="muted" style="text-align:center;margin:10px 0">— หรือ อีเมล+รหัส —</div>
+        <input id="sb_email" type="email" placeholder="อีเมล"><input id="sb_pw" type="password" placeholder="รหัสผ่าน (อย่างน้อย 6 ตัว)" style="margin-top:8px">
+        <div class="row" style="margin-top:8px"><button class="btn primary" style="flex:1" onclick="cloudSignInEmail()">เข้าสู่ระบบ</button><button class="btn ghost" style="flex:1" onclick="cloudSignUpEmail()">สมัครใหม่</button></div>
+      </div>`;
+  } else {
+    const av=acctAvatarUrl(_sbUser), nm=acctName(_sbUser), inits=(nm.trim()[0]||'👤').toUpperCase();
+    const avatarHtml = av?`<img class="acct-ava-lg" src="${esc(av)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'acct-ava-lg',textContent:'${esc(inits)}'}))">`:`<div class="acct-ava-lg">${esc(inits)}</div>`;
+    body=`<div class="acct-hero">${avatarHtml}<h2 style="margin:10px 0 2px">${esc(nm)}</h2><p class="muted" style="margin:0">${esc(_sbUser.email||'')}</p><span class="badge ok" style="margin-top:8px">🔵 เข้าสู่ระบบด้วย Google</span></div>
+      <div class="card"><h2 style="font-size:15px">🔄 สถานะการซิงก์</h2>
+        <div class="acct-status"><span class="dot-g"></span> เชื่อมต่อคลาวด์แล้ว · ซิงก์อัตโนมัติเมื่อออนไลน์</div>
+        <div class="muted" style="margin-top:6px">ซิงก์ล่าสุด: ${fmtSyncTime(_lastSync)}</div>
+        <div class="row" style="margin-top:12px"><button class="btn ghost" style="flex:1" onclick="cloudPull()">⬇️ ดึงจากคลาวด์</button><button class="btn ghost" style="flex:1" onclick="cloudPush(false)">⬆️ ส่งขึ้นคลาวด์</button></div>
+      </div>
+      <div class="card"><button class="btn danger block" onclick="cloudSignOut()">ออกจากระบบ</button></div>`;
+  }
+  el.innerHTML=`<div class="acct-bar"><button class="acct-back" onclick="closeAcctPage()">‹ กลับ</button><span>บัญชีของฉัน</span><span style="width:60px"></span></div><div class="acct-wrap">${body}</div>`;
+}
 
 function cloudCard(){
   const {url,key}=sbCfg();

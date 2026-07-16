@@ -137,6 +137,15 @@ canvas{max-width:100%}
 #shareView{display:none;position:fixed;inset:0;z-index:80;background:var(--bg);overflow:auto;padding-bottom:40px}
 #shareView .sharebar{position:sticky;top:0;background:var(--brand);color:#fff;padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;font-size:13px;font-weight:700;display:flex;align-items:center;justify-content:space-between;gap:8px}
 #shareView .sharebar button{background:#fff;color:var(--brand);border:none;border-radius:8px;padding:5px 12px;font-weight:700;font-family:inherit;cursor:pointer}
+
+#acctPage{display:none;position:fixed;inset:0;z-index:70;background:var(--bg);overflow:auto;padding-bottom:40px}
+#acctPage .acct-bar{position:sticky;top:0;background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;padding:calc(env(safe-area-inset-top) + 12px) 14px 12px;display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:16px;box-shadow:var(--shadow)}
+#acctPage .acct-back{background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:10px;padding:6px 12px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+#acctPage .acct-wrap{max-width:640px;margin:0 auto;padding:16px}
+.acct-hero{text-align:center;padding:22px 10px 6px}
+.acct-ava-lg{width:88px;height:88px;border-radius:50%;object-fit:cover;margin:0 auto;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-size:40px;box-shadow:0 6px 20px rgba(108,92,231,.35)}
+.acct-status{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:var(--ok)}
+.acct-status .dot-g{width:9px;height:9px;border-radius:50%;background:var(--ok);flex-shrink:0;box-shadow:0 0 0 3px rgba(18,184,134,.18)}
 </style>
 </head>
 <body>
@@ -173,8 +182,8 @@ canvas{max-width:100%}
 </div>
 <div class="toast" id="toast"></div>
 
-<script src="symptoms.js?v=24"></script>
-<script src="app.js?v=24"></script>
+<script src="symptoms.js?v=25"></script>
+<script src="app.js?v=25"></script>
 <script>
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
 </script>
