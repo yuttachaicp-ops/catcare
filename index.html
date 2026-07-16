@@ -162,4 +162,21 @@ canvas{max-width:100%}
 
 <nav class="tabbar">
   <button class="tab on" data-tab="home" onclick="go('home')"><span class="ic">🏠</span>หน้าหลัก</button>
-  
+  <button class="tab" data-tab="book" onclick="go('book')"><span class="ic">📔</span>สมุดสุขภาพ</button>
+  <button class="tab" data-tab="assess" onclick="go('assess')"><span class="ic">🩺</span>ประเมินอาการ</button>
+  <button class="tab" data-tab="dash" onclick="go('dash')"><span class="ic">📊</span>Dashboard</button>
+  <button class="tab" data-tab="more" onclick="go('more')"><span class="ic">⋯</span>เพิ่มเติม</button>
+</nav>
+
+<div class="modal-bg" id="modalBg" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modal"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="symptoms.js?v=24"></script>
+<script src="app.js?v=24"></script>
+<script>
+if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
+</script>
+</body>
+</html>
